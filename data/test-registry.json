@@ -1,0 +1,36 @@
+{
+  "packages": {
+    "react": {
+      "versions": {
+        "18.2.0": {
+          "documentationUrls": [
+            {
+              "url": "https://react.dev/",
+              "type": "official",
+              "confidence": "UNKNOWN"
+            }
+          ],
+          "lastUpdated": "2025-03-28T15:12:11.921Z"
+        }
+      },
+      "registryUrl": "https://www.npmjs.com/package/react",
+      "repositoryUrl": null
+    },
+    "flask": {
+      "versions": {
+        "3.0.0": {
+          "documentationUrls": [
+            {
+              "url": "https://flask.palletsprojects.com/en/latest/",
+              "type": "official",
+              "confidence": "UNKNOWN"
+            }
+          ],
+          "lastUpdated": "2025-03-28T15:12:11.921Z"
+        }
+      },
+      "registryUrl": "https://pypi.org/project/Flask/",
+      "repositoryUrl": null
+    }
+  }
+}

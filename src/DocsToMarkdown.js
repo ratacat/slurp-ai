@@ -8,9 +8,9 @@ const { URL } = require('url');
 const PQueue = require('p-queue').default;
 
 /**
- * DocumentationScraper - A class to scrape documentation sites and convert to markdown
+ * DocsToMarkdown - A class to scrape documentation sites and convert to markdown
  */
-class DocScraper {
+class DocsToMarkdown {
   /**
    * Create a new DocScraper
    * @param {Object} options - Configuration options
@@ -446,4 +446,4 @@ ${markdown}`;
   }
 }
 
-module.exports = DocScraper;
+module.exports = DocsToMarkdown;

@@ -1,0 +1,22 @@
+{
+  "name": "slurpai",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.8.4",
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.5",
+    "fs-extra": "^11.3.0",
+    "p-queue": "^8.1.0",
+    "puppeteer": "^24.4.0",
+    "turndown": "^7.2.0"
+  }
+}
