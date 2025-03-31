@@ -110,6 +110,116 @@ class DocsToMarkdown extends EventEmitter {
     this.maxPages = options.maxPages !== undefined ? options.maxPages : (parseInt(process.env.MAX_PAGES_PER_SITE, 10) || 0);
     this.useHeadless = options.useHeadless !== false;
     
+    // URL filtering options
+    this.baseUrlPath = this.baseUrlObj.pathname;
+    this.enforceBasePath = options.enforceBasePath !== false;
+    
+    // URL blacklist - patterns to skip
+    this.urlBlacklist = options.urlBlacklist || [
+      // Common non-documentation pages
+      '/blog/', 
+      '/news/',
+      '/forum/',
+      '/community/',
+      '/download/',
+      '/about/',
+      '/contact/',
+      '/terms/',
+      '/privacy/',
+      '/login/',
+      '/register/',
+      '/pricing/',
+      '/careers/',
+      '/jobs/',
+      '/team/',
+      
+      // Social media and external services
+      '/twitter/',
+      '/facebook/',
+      '/linkedin/',
+      '/youtube/',
+      '/github.com/',
+      '/discord/',
+      '/slack/',
+      
+      // E-commerce/marketing
+      '/store/',
+      '/shop/',
+      '/buy/',
+      '/purchase/',
+      '/cart/',
+      '/checkout/',
+      '/subscribe/',
+      
+      // User account related
+      '/account/',
+      '/profile/',
+      '/dashboard/',
+      '/settings/',
+      '/preferences/',
+      
+      // Support/feedback
+      '/support/',
+      '/help-center/',
+      '/faq/',
+      '/ticket/',
+      '/feedback/',
+      '/survey/',
+      
+      // Events/webinars
+      '/events/',
+      '/webinar/',
+      '/conference/',
+      '/meetup/',
+      '/workshop/',
+      
+      // Miscellaneous
+      '/search/',
+      '/print/',
+      '/share/',
+      '/comment/',
+      '/vote/',
+      '/stats/',
+      '/analytics/',
+      '/feed/',
+      '/sitemap/',
+      '/archive/'
+    ];
+    
+    // Query parameters to keep
+    this.queryParamsToKeep = options.queryParamsToKeep || [
+      // Version related
+      'version',
+      'v',
+      'ver',
+      
+      // Language/localization
+      'lang',
+      'locale',
+      'language',
+      
+      // Content display
+      'theme',
+      'view',
+      'format',
+      
+      // API specific
+      'api-version',
+      'endpoint',
+      'namespace',
+      
+      // Documentation specific
+      'section',
+      'chapter',
+      'topic',
+      'module',
+      'component',
+      'function',
+      'method',
+      'class',
+      'example'
+    ];
+    
     // Basic exclusion selectors for article extraction fallback
     this.excludeSelectors = [
       'script',
@@ -126,7 +236,7 @@ class DocsToMarkdown extends EventEmitter {
     }
 
     // Concurrency settings
-    this.concurrency = options.concurrency || 5;
+    this.concurrency = options.concurrency || 10;
     this.retryCount = options.retryCount || 3;
     this.retryDelay = options.retryDelay || 1000;
     
@@ -586,6 +696,146 @@ class DocsToMarkdown extends EventEmitter {
   }
 
   /**
+   * Preprocess a URL to determine if it should be added to the queue
+   * @param {string} url - The URL to process
+   * @param {string} sourceUrl - The URL where this link was found
+   * @returns {string|null} - Normalized URL or null if rejected
+   */
+  preprocessUrl(url, sourceUrl) {
+    try {
+      // Parse URLs
+      const urlObj = new URL(url);
+      const sourceUrlObj = new URL(sourceUrl);
+      
+      // 1. Basic normalization
+      // Remove hash
+      urlObj.hash = '';
+      
+      // 2. Domain check (already in extractLinks, but double-check)
+      if (!this.allowedDomains.includes(urlObj.hostname)) {
+        // console.log(`Skipping URL ${url} - domain not allowed`);
+        return null;
+      }
+      
+      // 3. Base path check - ensure URL contains the base path if enforced
+      if (this.enforceBasePath && this.baseUrlPath && this.baseUrlPath !== '/') {
+        // Skip URLs that don't contain the base path
+        if (!urlObj.pathname.startsWith(this.baseUrlPath)) {
+          // console.log(`Skipping URL ${url} - doesn't match base path ${this.baseUrlPath}`);
+          return null;
+        }
+      }
+      
+      // 4. Check against blacklist patterns
+      const path = urlObj.pathname.toLowerCase();
+      for (const pattern of this.urlBlacklist) {
+        if (path.includes(pattern.toLowerCase())) {
+          // console.log(`Skipping URL ${url} - matches blacklist pattern ${pattern}`);
+          return null;
+        }
+      }
+      
+      // 5. Check for common file extensions that aren't documentation
+      const fileExtensions = ['.pdf', '.zip', '.tar.gz', '.tgz', '.exe', '.dmg', '.pkg', 
+                             '.jpg', '.jpeg', '.png', '.gif', '.svg', '.mp4', '.webm', '.mp3', '.wav'];
+      for (const ext of fileExtensions) {
+        if (path.endsWith(ext)) {
+          // console.log(`Skipping URL ${url} - non-documentation file extension ${ext}`);
+          return null;
+        }
+      }
+      
+      // 6. Handle query parameters
+      if (urlObj.search) {
+        const params = new URLSearchParams(urlObj.search);
+        const newParams = new URLSearchParams();
+        
+        // Only keep specified parameters
+        for (const param of this.queryParamsToKeep) {
+          if (params.has(param)) {
+            newParams.set(param, params.get(param));
+          }
+        }
+        
+        // Update URL with filtered parameters
+        urlObj.search = newParams.toString();
+      }
+      
+      // 7. Check for duplicate content with trailing slash variations
+      // Normalize trailing slashes to avoid duplicates
+      if (urlObj.pathname !== '/' && urlObj.pathname.endsWith('/')) {
+        urlObj.pathname = urlObj.pathname.slice(0, -1);
+      }
+      
+      // 8. Check for common URL patterns that indicate pagination or sorting
+      // These often lead to duplicate content with different ordering
+      const paginationParams = ['page', 'p', 'pg', 'start', 'offset'];
+      const sortingParams = ['sort', 'order', 'sortBy', 'orderBy', 'direction'];
+      
+      // If URL has pagination or sorting parameters but no content-specific parameters,
+      // it might be duplicate content - check if we should keep it
+      let hasPaginationOrSorting = false;
+      let hasContentParams = false;
+      
+      if (urlObj.search) {
+        const params = new URLSearchParams(urlObj.search);
+        
+        // Check for pagination/sorting params
+        for (const param of [...paginationParams, ...sortingParams]) {
+          if (params.has(param)) {
+            hasPaginationOrSorting = true;
+            break;
+          }
+        }
+        
+        // Check for content-specific params (those we want to keep)
+        for (const param of this.queryParamsToKeep) {
+          if (params.has(param)) {
+            hasContentParams = true;
+            break;
+          }
+        }
+        
+        // If it has pagination/sorting but no content params, consider skipping
+        // But only if it's not the first page (page=1 or no page param)
+        if (hasPaginationOrSorting && !hasContentParams) {
+          const page = params.get('page') || params.get('p') || params.get('pg') || '1';
+          if (page !== '1') {
+            // console.log(`Skipping URL ${url} - pagination without content params`);
+            return null;
+          }
+        }
+      }
+      
+      // 9. Check for URL depth - very deep URLs are often not useful for documentation
+      const pathSegments = urlObj.pathname.split('/').filter(Boolean);
+      if (pathSegments.length > 5) {
+        // For deep URLs, be more selective - only follow if they look like documentation
+        const docPatterns = ['/api/', '/reference/', '/guide/', '/tutorial/', '/example/', '/doc/'];
+        let isDocPath = false;
+        
+        for (const pattern of docPatterns) {
+          if (urlObj.pathname.includes(pattern)) {
+            isDocPath = true;
+            break;
+          }
+        }
+        
+        if (!isDocPath) {
+          // console.log(`Skipping URL ${url} - too deep and not documentation path`);
+          return null;
+        }
+      }
+      
+      // Return normalized URL
+      return urlObj.toString();
+    } catch (error) {
+      console.error(`Error preprocessing URL ${url}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
    * Extract links from the page for further crawling
    * @param {CheerioStatic} $ - Cheerio instance
    * @param {string} baseUrl - Base URL for resolving relative links
@@ -607,14 +857,13 @@ class DocsToMarkdown extends EventEmitter {
       try {
         const url = new URL(href, baseUrl);
         
-        // Only process links from allowed domains
-        if (!this.allowedDomains.includes(url.hostname)) {
+        // Preprocess the URL
+        const normalizedUrl = this.preprocessUrl(url.toString(), baseUrl);
+        
+        // Skip if preprocessing rejected the URL
+        if (!normalizedUrl) {
           return;
         }
-        
-        // Remove hash part (fragment)
-        url.hash = '';
-        const normalizedUrl = url.toString();
         
         // Add to new URLs if not already tracked
         if (!this.visitedUrls.has(normalizedUrl) && 

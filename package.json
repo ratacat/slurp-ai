@@ -3,10 +3,12 @@
   "version": "1.0.0",
   "main": "index.js",
   "bin": {
-    "slurp": "./slurp.js"
+    "slurp": "./slurp.js",
+    "slurp-compile": "./compile.js"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "compile": "node compile.js"
   },
   "keywords": [],
   "author": "",
@@ -19,6 +21,7 @@
     "cheerio": "^1.0.0",
     "dotenv": "^16.4.5",
     "fs-extra": "^11.3.0",
+    "js-yaml": "^4.1.0",
     "p-queue": "^8.1.0",
     "puppeteer": "^24.4.0",
     "turndown": "^7.2.0"

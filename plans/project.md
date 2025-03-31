@@ -93,6 +93,22 @@ slurp purge [package] [version]   # Remove documentation from cache
     - Fix case-sensitivity in name matching (registry has "Axios", code looks for "axios")
     - Normalize package names between registry entries and lookups
     - Improve handling of scoped packages (@org/package)
+12. **✅ URL filtering enhancements**:
+    - Implement intelligent URL preprocessing to filter out non-documentation pages
+    - Add configurable URL blacklist patterns to skip irrelevant content
+    - Preserve only meaningful query parameters to avoid duplicate content
+    - Enforce base path to keep scraping within relevant documentation sections
+    - Filter out non-documentation file extensions (.pdf, .zip, etc.)
+    - Normalize trailing slashes to prevent duplicate content
+    - Handle pagination and sorting parameters to avoid redundant pages
+    - Implement URL depth checking with documentation path detection
+13. **✅ Documentation compilation**:
+    - Create a utility to compile all scraped markdown files into a single consolidated file
+    - Remove navigation elements, empty spaces, and other non-content elements
+    - Organize content logically by library and version
+    - Implement duplicate content detection and removal
+    - Preserve essential metadata while removing clutter
+    - Provide CLI interface with configurable options
 
 ## Architecture
 The project has a clean, modular architecture:
@@ -100,10 +116,12 @@ The project has a clean, modular architecture:
 ```
 slurpai/
 ├── index.js                # Main CLI entry point with argument parsing
+├── compile.js              # CLI for compiling documentation into a single file
 ├── src/
 │   ├── DocsToMarkdown.js   # Core content extraction and markdown conversion
 │   ├── LocalRegistryLookup.js # Local registry lookup for packages
 │   ├── DocSlurper.js       # Web search-based documentation discovery
+│   ├── MarkdownCompiler.js # Compiles markdown files into a single document
 │   └── ContextBuilder.js   # Context creation for AI consumption (planned)
 ├── test.js                 # Test script for quick verification
 ├── test-registry-lookup.js # Test script for local registry lookup
@@ -168,6 +186,8 @@ The scraper is highly configurable through command-line parameters:
 | Retry Delay | `--retry-delay` | Delay between retries in milliseconds | `1000` |
 
 ## Output Format
+
+### Individual Markdown Files
 The scraper produces Markdown files with YAML frontmatter containing metadata:
 
 ```markdown
@@ -184,6 +204,50 @@ exactVersionMatch: true
 This page provides a quick introduction to Flask...
 ```
 
+### Compiled Documentation
+The MarkdownCompiler produces a single consolidated file with organized content:
+
+```markdown
+# Compiled Documentation
+
+Generated on 2025-03-31T20:21:45.000Z
+
+## flask
+
+### Version 2.0.1
+
+#### quickstart.md
+
+> Source: https://flask.palletsprojects.com/en/stable/quickstart/
+> Scraped: 3/28/2025, 1:45:00 PM
+
+# Quickstart
+
+This page provides a quick introduction to Flask...
+
+#### installation.md
+
+> Source: https://flask.palletsprojects.com/en/stable/installation/
+> Scraped: 3/28/2025, 1:46:30 PM
+
+# Installation
+
+Flask depends on the Werkzeug WSGI toolkit, the Jinja template...
+
+## lodash
+
+### Version 4.17.15
+
+#### array.md
+
+> Source: https://lodash.com/docs/4.17.15#chunk
+> Scraped: 3/29/2025, 10:15:22 AM
+
+# Array Methods
+
+This section documents the array manipulation methods...
+```
+
 ## Key Challenges and Solutions
 - **Content Extraction**: Using targeted CSS selectors to identify main content
 - **Link Discovery**: Intelligent crawling with domain filtering
@@ -193,6 +257,9 @@ This page provides a quick introduction to Flask...
 - **Package Analysis**: Reading and interpreting package.json for dependency information
 - **Documentation Location**: Finding the correct documentation site for a given package
 - **Context Building**: Extracting and bundling source code with documentation
+- **Content Consolidation**: Compiling multiple markdown files into a single document
+- **Navigation Removal**: Identifying and removing navigation elements and other non-content sections
+- **Duplicate Detection**: Identifying and removing duplicate content across documentation files
 
 ## Brave Search Integration
 
@@ -255,6 +322,79 @@ Before confirming a site as valid documentation:
 2. Check for common documentation structures in the page
 3. Scan for version information to assess confidence level
 4. Look for indicators of complete documentation (navigation, multiple pages)
+
+## URL Filtering
+
+SlurpAI implements intelligent URL filtering to ensure high-quality documentation scraping:
+
+### URL Preprocessing Workflow
+
+The URL filtering process follows this enhanced workflow:
+
+```mermaid
+flowchart TD
+    A[Extract Link] --> B[Basic Filtering]
+    B -->|Skip| C[Empty/Anchor/JS Links]
+    B -->|Continue| D[Domain Check]
+    
+    D -->|Not Allowed| E[Skip URL]
+    D -->|Allowed| F[Base Path Check]
+    
+    F -->|Doesn't Match| G[Skip URL]
+    F -->|Matches| H[Blacklist Check]
+    
+    H -->|Blacklisted| I[Skip URL]
+    H -->|Not Blacklisted| J[File Extension Check]
+    
+    J -->|Non-Doc Extension| K[Skip URL]
+    J -->|Valid Extension| L[Query Parameter Filtering]
+    
+    L --> M[Keep Only Relevant Params]
+    M --> N[Normalize URL]
+    N --> O[Normalize Trailing Slashes]
+    
+    O --> P[Check Pagination/Sorting]
+    P -->|Duplicate Content Risk| Q[Skip URL]
+    P -->|Unique Content| R[URL Depth Check]
+    
+    R -->|Too Deep| S[Check for Doc Patterns]
+    S -->|Not Doc Path| T[Skip URL]
+    S -->|Is Doc Path| U[Add to Queue if New]
+    R -->|Acceptable Depth| U
+```
+
+### Base Path Enforcement
+
+When enabled, this feature ensures that all scraped URLs contain the base path from the initial URL. For example, if scraping starts at `https://moleculer.services/docs/0.15/`, only URLs containing `/docs/0.15/` will be followed. This prevents the scraper from wandering into unrelated sections of the site.
+
+### URL Blacklist
+
+The scraper automatically filters out URLs containing patterns that typically lead to non-documentation content:
+
+- Common non-documentation pages: `/blog/`, `/news/`, `/about/`, `/contact/`, etc.
+- Social media and external services: `/twitter/`, `/github.com/`, `/discord/`, etc.
+- E-commerce/marketing: `/store/`, `/pricing/`, `/subscribe/`, etc.
+- User account related: `/login/`, `/account/`, `/profile/`, etc.
+- Support/feedback: `/support/`, `/help-center/`, `/faq/`, etc.
+
+### Query Parameter Handling
+
+Many documentation sites use query parameters that aren't relevant to the content (tracking parameters, session IDs, etc.). SlurpAI preserves only meaningful parameters while discarding others to avoid duplicate content:
+
+Parameters preserved by default:
+- Version related: `version`, `v`, `ver`
+- Language/localization: `lang`, `locale`, `language`
+- Content display: `theme`, `view`, `format`
+- API specific: `api-version`, `endpoint`, `namespace`
+- Documentation specific: `section`, `chapter`, `topic`, etc.
+
+### Benefits of URL Filtering
+
+1. **Improved Documentation Quality**: By focusing only on relevant pages, the scraper produces cleaner, more focused documentation
+2. **Reduced Processing Time**: Skipping irrelevant pages significantly reduces scraping time
+3. **Lower Resource Usage**: Fewer pages means less memory and CPU usage
+4. **Elimination of Duplicate Content**: Normalizing URLs prevents the same content from being processed multiple times
+5. **Better AI Context**: The resulting documentation is more relevant and concise for AI consumption
 
 ## Context Building
 

@@ -94,6 +94,64 @@ flowchart TD
 - Evolution of project decisions
 - Tool usage patterns
 
+## URL Filtering Patterns
+
+SlurpAI implements intelligent URL filtering to ensure high-quality documentation scraping. The following patterns have been established:
+
+### URL Preprocessing Workflow
+1. Basic filtering (skip empty/anchor/JS links)
+2. Domain check (only allowed domains)
+3. Base path enforcement (ensure URLs contain base path)
+4. Blacklist check (skip URLs matching blacklist patterns)
+5. File extension check (skip non-documentation file types)
+6. Query parameter filtering (keep only relevant parameters)
+7. URL normalization (trailing slashes, etc.)
+8. Pagination/sorting handling (avoid duplicate content)
+9. URL depth check (limit deep URLs unless they match doc patterns)
+
+### Key Filtering Strategies
+- **Base Path Enforcement**: When enabled, only follow URLs containing the base path from the initial URL
+- **URL Blacklist**: Skip URLs containing patterns for non-documentation content
+- **Query Parameter Handling**: Preserve only meaningful parameters while discarding tracking/session IDs
+- **Duplicate Prevention**: Normalize URLs to avoid processing the same content multiple times
+- **Documentation Path Detection**: Prioritize URLs that match common documentation patterns
+
+## Documentation Compilation
+
+SlurpAI now includes a markdown compiler that consolidates all scraped documentation into a single file:
+
+### Compilation Process
+1. Recursively find all markdown files in the slurps_docs directory
+2. Process each file to remove navigation elements and non-content sections
+3. Organize content hierarchically by library and version
+4. Detect and remove duplicate content sections
+5. Preserve essential metadata (original URLs, scrape dates)
+6. Generate a single consolidated markdown file
+
+### Cleanup Strategies
+- **Navigation Removal**: Identify and remove navigation links, tables of contents, etc.
+- **Feedback Element Removal**: Remove "Was this page helpful?" sections and similar elements
+- **Whitespace Normalization**: Clean up excessive blank lines and whitespace
+- **Duplicate Detection**: Use content hashing to identify and remove duplicate sections
+- **Metadata Preservation**: Keep original source URLs and other essential metadata
+
+### Usage
+```bash
+# Basic usage with default options
+node compile.js
+
+# Custom input/output paths
+node compile.js --input ./my-docs --output ./compiled.md
+
+# Disable metadata preservation
+node compile.js --preserve-metadata false
+
+# Custom exclude patterns
+node compile.js --exclude '["Was this helpful\\?", "On this page"]'
+```
+
+These patterns help ensure the scraper stays focused on relevant documentation pages and avoids crawling irrelevant content.
+
 ## Task Execution Guidelines
 
 - Always carefully read and understand the user's request before proceeding

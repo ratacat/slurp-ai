@@ -23,6 +23,22 @@
       "latestVersion": null,
       "addedAt": "2025-03-31T19:39:28.507Z",
       "updatedAt": "2025-03-31T19:39:28.507Z"
+    },
+    {
+      "name": "4.17.15",
+      "documentationUrl": "https://lodash.com/docs/4.17.15",
+      "source": "manual",
+      "latestVersion": "4.17.15",
+      "addedAt": "2025-03-31T19:55:03.016Z",
+      "updatedAt": "2025-03-31T19:55:03.017Z"
+    },
+    {
+      "name": "docs",
+      "documentationUrl": "https://babeljs.io/docs/",
+      "source": "manual",
+      "latestVersion": null,
+      "addedAt": "2025-03-31T20:28:44.006Z",
+      "updatedAt": "2025-03-31T20:28:44.007Z"
     }
   ]
 }
