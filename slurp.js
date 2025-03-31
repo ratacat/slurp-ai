@@ -4,6 +4,7 @@ require('dotenv').config();
 const LocalRegistryLookup = require('./src/LocalRegistryLookup');
 const DocsToMarkdown = require('./src/DocsToMarkdown');
 const DocSlurper = require('./src/DocSlurper');
+const { MarkdownCompiler } = require('./src/MarkdownCompiler');
 const path = require('path');
 const fs = require('fs-extra');
 
@@ -174,6 +175,63 @@ async function main() {
       
       // Use purge documentation function
       await purgeDocumentation(purgePackage, purgeVersion);
+      break;
+      
+    case 'compile':
+      // Compile documentation: slurp compile [options]
+      console.log('Compiling documentation...');
+      
+      // Parse compile-specific options
+      const compileOptions = {
+        basePath: params['base-path'],
+        inputDir: params.input,
+        outputFile: params.output,
+        preserveMetadata: params['preserve-metadata'] !== 'false',
+        removeNavigation: params['remove-navigation'] !== 'false',
+        removeDuplicates: params['remove-duplicates'] !== 'false'
+      };
+      
+      // Handle exclude patterns if provided
+      if (params.exclude) {
+        try {
+          compileOptions.excludePatterns = JSON.parse(params.exclude).map(pattern => new RegExp(pattern, 'gi'));
+        } catch (error) {
+          console.error('Error parsing exclude patterns:', error.message);
+          return;
+        }
+      }
+      
+      try {
+        // Create compiler instance
+        const compiler = new MarkdownCompiler(compileOptions);
+        
+        // Run compilation
+        const result = await compiler.compile();
+        
+        // Display results
+        console.log('\nCompilation complete!');
+        console.log(`Output file: ${result.outputFile}`);
+        console.log('\nStatistics:');
+        console.log(`- Libraries processed: ${result.stats.totalLibraries}`);
+        console.log(`- Versions processed: ${result.stats.totalVersions}`);
+        console.log(`- Total files found: ${result.stats.totalFiles}`);
+        console.log(`- Files processed: ${result.stats.processedFiles}`);
+        console.log(`- Files skipped: ${result.stats.skippedFiles}`);
+        console.log(`- Duplicates removed: ${result.stats.duplicatesRemoved}`);
+        
+        // Check if any files were processed
+        if (result.stats.processedFiles === 0) {
+          console.log('\nNo files were processed. This could be because:');
+          console.log('- The input directory is empty');
+          console.log('- No markdown files were found');
+          console.log('- All files were filtered out as duplicates');
+          console.log('\nCheck your input directory and try again.');
+        } else {
+          console.log(`\nSuccessfully compiled ${result.stats.processedFiles} files into ${result.outputFile}`);
+        }
+      } catch (error) {
+        console.error(`❌ Error during compilation: ${error.message}`);
+      }
       break;
       
     // Legacy support for original parameter style
@@ -426,9 +484,9 @@ async function scrapePackageDocumentation(packageName, version) {
       allowedDomains: [new URL(docInfo.url).hostname],
       
       // Async queue options
-      concurrency: parseInt(params.concurrency || '5', 10),
-      retryCount: parseInt(params['retry-count'] || '3', 10),
-      retryDelay: parseInt(params['retry-delay'] || '1000', 10)
+      concurrency: parseInt(params.concurrency ||  10),
+      retryCount: parseInt(params['retry-count'] || '3'),
+      retryDelay: parseInt(params['retry-delay'] || '1000')
     };
     
     const scraper = new DocsToMarkdown(scrapeConfig);
@@ -506,9 +564,9 @@ async function scrapeFromUrl(url, library, version) {
       allowedDomains: [urlObj.hostname],
       
       // Async queue options
-      concurrency: parseInt(params.concurrency || '5', 10),
-      retryCount: parseInt(params['retry-count'] || '3', 10),
-      retryDelay: parseInt(params['retry-delay'] || '1000', 10)
+      concurrency: parseInt(params.concurrency || 10),
+      retryCount: parseInt(params['retry-count'] || '3'),
+      retryDelay: parseInt(params['retry-delay'] || '1000')
     };
     
     // Custom filename generator to create a better file structure
@@ -729,9 +787,9 @@ async function scrapeFromPackageJson(packageJsonPath) {
           allowedDomains: [new URL(docInfo.url).hostname],
           
           // Async queue options
-          concurrency: parseInt(params.concurrency || '5', 10),
-          retryCount: parseInt(params['retry-count'] || '3', 10),
-          retryDelay: parseInt(params['retry-delay'] || '1000', 10)
+          concurrency: parseInt(params.concurrency || 10),
+          retryCount: parseInt(params['retry-count'] || '3'),
+          retryDelay: parseInt(params['retry-delay'] || '1000')
         };
         
         const scraper = new DocsToMarkdown(scrapeConfig);
@@ -812,6 +870,7 @@ Commands:
   list                          List locally available documentation
   check [package.json path]     Check all dependencies in package.json
   purge [package] [version]     Remove documentation from cache
+  compile [options]             Compile documentation into a single file
 
 Examples:
   Read local documentation:
@@ -831,6 +890,9 @@ Examples:
 
   Purge documentation:
     slurp purge express 4.18.2
+    
+  Compile documentation:
+    slurp compile --input ./slurps_docs --output ./compiled_docs.md
 
 Legacy Usage (still supported):
   slurp --package <package-name> [--version <version>] [options]
@@ -845,6 +907,14 @@ Options:
   --retry-count <number>   Number of retries for failed requests (default: 3)
   --retry-delay <number>   Delay between retries in ms (default: 1000)
   --yes                    Skip confirmation prompts
+  
+Compile Options:
+  --input <dir>            Input directory (default: ./slurps_docs)
+  --output <file>          Output file (default: ./compiled_docs.md)
+  --preserve-metadata      Keep metadata in compiled output (default: true)
+  --remove-navigation      Remove navigation elements (default: true)
+  --remove-duplicates      Remove duplicate content (default: true)
+  --exclude <json-array>   JSON array of regex patterns to exclude
   `);
 }
 
