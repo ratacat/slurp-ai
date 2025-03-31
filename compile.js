@@ -3,6 +3,7 @@
 const { MarkdownCompiler } = require('./src/MarkdownCompiler');
 const path = require('path');
 const fs = require('fs-extra');
+require('dotenv').config();
 
 /**
  * Parse command line arguments
@@ -11,6 +12,7 @@ const fs = require('fs-extra');
 function parseArgs() {
   const args = process.argv.slice(2);
   const options = {
+    basePath: null,
     inputDir: null,
     outputFile: null,
     preserveMetadata: true,
@@ -25,6 +27,11 @@ function parseArgs() {
     
     if (arg === '--help' || arg === '-h') {
       options.help = true;
+      continue;
+    }
+    
+    if (arg === '--base-path' || arg === '-b') {
+      options.basePath = args[++i];
       continue;
     }
     
@@ -78,13 +85,22 @@ Usage: node compile.js [options]
 
 Options:
   --help, -h                 Show this help message
-  --input, -i <dir>          Input directory (default: ./slurps_docs)
-  --output, -o <file>        Output file (default: ./compiled_docs.md)
-  --preserve-metadata <bool> Whether to preserve metadata (default: true)
-  --remove-navigation <bool> Whether to remove navigation links (default: true)
-  --remove-duplicates <bool> Whether to remove duplicate content (default: true)
+  --base-path, -b <path>     Base path for all operations (default: current directory or SLURP_BASE_PATH)
+  --input, -i <dir>          Input directory (default: ./slurps_docs or SLURP_INPUT_DIR)
+  --output, -o <file>        Output file (default: ./compiled_docs.md or SLURP_OUTPUT_FILE)
+  --preserve-metadata <bool> Whether to preserve metadata (default: true or SLURP_PRESERVE_METADATA)
+  --remove-navigation <bool> Whether to remove navigation links (default: true or SLURP_REMOVE_NAVIGATION)
+  --remove-duplicates <bool> Whether to remove duplicate content (default: true or SLURP_REMOVE_DUPLICATES)
   --exclude <json>           JSON array of regex patterns to exclude
                              Example: --exclude '["Was this helpful\\?", "On this page"]'
+
+Environment Variables:
+  SLURP_BASE_PATH            Base path for all operations
+  SLURP_INPUT_DIR            Input directory for markdown files
+  SLURP_OUTPUT_FILE          Output file for compiled docs
+  SLURP_PRESERVE_METADATA    Whether to preserve metadata (true/false)
+  SLURP_REMOVE_NAVIGATION    Whether to remove navigation elements (true/false)
+  SLURP_REMOVE_DUPLICATES    Whether to remove duplicate content (true/false)
 
 Examples:
   # Basic usage with default options
@@ -92,6 +108,9 @@ Examples:
 
   # Custom input/output paths
   node compile.js --input ./my-docs --output ./compiled.md
+
+  # Using base path
+  node compile.js --base-path ~/projects/docs --input docs --output compiled.md
 
   # Disable metadata preservation
   node compile.js --preserve-metadata false
@@ -117,6 +136,7 @@ async function main() {
     
     // Create compiler instance with options
     const compiler = new MarkdownCompiler({
+      basePath: options.basePath,
       inputDir: options.inputDir,
       outputFile: options.outputFile,
       preserveMetadata: options.preserveMetadata,

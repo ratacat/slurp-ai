@@ -4,6 +4,7 @@ const puppeteer = require('puppeteer');
 const TurndownService = require('turndown');
 const fs = require('fs-extra');
 const path = require('path');
+const os = require('os');
 const { URL } = require('url');
 const EventEmitter = require('events');
 const { extract } = require('@extractus/article-extractor');
@@ -99,20 +100,29 @@ class DocsToMarkdown extends EventEmitter {
   constructor(options) {
     super(); // Call EventEmitter constructor
     this.baseUrl = options.baseUrl;
-    this.outputDir = options.outputDir || './docs';
+    this.basePath = options.basePath || process.env.SLURP_BASE_PATH || process.cwd();
+    this.outputDir = this.resolvePath(options.outputDir || process.env.SLURP_OUTPUT_DIR || 'docs');
     this.libraryInfo = options.libraryInfo || {}; // Add library info property
     this.visitedUrls = new Set(); // Fully processed URLs
     this.queuedUrls = new Set(); // URLs in the queue
     this.inProgressUrls = new Set(); // URLs currently being processed
     this.baseUrlObj = new URL(options.baseUrl);
     this.allowedDomains = options.allowedDomains || [this.baseUrlObj.hostname];
-    // Use provided maxPages, or fall back to MAX_PAGES_PER_SITE from .env, or default to 0 (unlimited)
-    this.maxPages = options.maxPages !== undefined ? options.maxPages : (parseInt(process.env.MAX_PAGES_PER_SITE, 10) || 0);
-    this.useHeadless = options.useHeadless !== false;
+    
+    // Use provided maxPages, or fall back to SLURP_MAX_PAGES_PER_SITE from .env, or default to 0 (unlimited)
+    this.maxPages = options.maxPages !== undefined ? 
+      options.maxPages : 
+      (parseInt(process.env.SLURP_MAX_PAGES_PER_SITE, 10) || 0);
+    
+    this.useHeadless = options.useHeadless !== undefined ?
+      options.useHeadless :
+      (process.env.SLURP_USE_HEADLESS !== 'false');
     
     // URL filtering options
     this.baseUrlPath = this.baseUrlObj.pathname;
-    this.enforceBasePath = options.enforceBasePath !== false;
+    this.enforceBasePath = options.enforceBasePath !== undefined ?
+      options.enforceBasePath :
+      (process.env.SLURP_ENFORCE_BASE_PATH !== 'false');
     
     // URL blacklist - patterns to skip
     this.urlBlacklist = options.urlBlacklist || [
@@ -235,10 +245,52 @@ class DocsToMarkdown extends EventEmitter {
       this.excludeSelectors.push(...options.excludeSelectors);
     }
 
+    // Query parameters to keep - parse from env if available
+    const envQueryParams = process.env.SLURP_PRESERVE_QUERY_PARAMS ? 
+      process.env.SLURP_PRESERVE_QUERY_PARAMS.split(',') : null;
+    
+    this.queryParamsToKeep = options.queryParamsToKeep || envQueryParams || [
+      // Version related
+      'version',
+      'v',
+      'ver',
+      
+      // Language/localization
+      'lang',
+      'locale',
+      'language',
+      
+      // Content display
+      'theme',
+      'view',
+      'format',
+      
+      // API specific
+      'api-version',
+      'endpoint',
+      'namespace',
+      
+      // Documentation specific
+      'section',
+      'chapter',
+      'topic',
+      'module',
+      'component',
+      'function',
+      'method',
+      'class',
+      'example'
+    ];
+    
     // Concurrency settings
-    this.concurrency = options.concurrency || 10;
-    this.retryCount = options.retryCount || 3;
-    this.retryDelay = options.retryDelay || 1000;
+    this.concurrency = options.concurrency || 
+      parseInt(process.env.SLURP_CONCURRENCY, 10) || 10;
+      
+    this.retryCount = options.retryCount || 
+      parseInt(process.env.SLURP_RETRY_COUNT, 10) || 3;
+      
+    this.retryDelay = options.retryDelay || 
+      parseInt(process.env.SLURP_RETRY_DELAY, 10) || 1000;
     
     // Initialize PQueue for concurrent processing
     this.queue = new PQueue({
@@ -262,6 +314,31 @@ class DocsToMarkdown extends EventEmitter {
       startTime: null,
       endTime: null
     };
+  }
+
+  /**
+   * Resolve a path relative to the base path
+   * @param {string} relativePath - Path relative to base
+   * @returns {string} Absolute path
+   */
+  resolvePath(relativePath) {
+    if (!relativePath) return this.basePath;
+    
+    // Handle absolute paths
+    if (path.isAbsolute(relativePath)) {
+      return relativePath;
+    }
+    
+    // Handle home directory
+    if (relativePath.startsWith('~')) {
+      return path.join(
+        os.homedir(),
+        relativePath.substring(1)
+      );
+    }
+    
+    // Resolve relative to base path
+    return path.join(this.basePath, relativePath);
   }
 
   /**
@@ -893,7 +970,7 @@ class DocsToMarkdown extends EventEmitter {
     const filename = this.getFilenameForUrl(url);
     
     // Build the output directory path based on library and version info
-    let outputDir = this.outputDir;
+    let outputDir = this.resolvePath(this.outputDir);
     
     if (options.library) {
       outputDir = path.join(outputDir, options.library);

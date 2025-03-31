@@ -1,5 +1,6 @@
 const fs = require('fs-extra');
 const path = require('path');
+const os = require('os');
 const crypto = require('crypto');
 const yaml = require('js-yaml');
 
@@ -23,16 +24,35 @@ class MarkdownCompiler {
    * @param {RegExp[]} options.excludePatterns - Array of regex patterns to exclude (default: common patterns)
    */
   constructor(options = {}) {
-    this.inputDir = options.inputDir || path.join(process.cwd(), 'slurps_docs');
-    this.outputFile = options.outputFile || path.join(process.cwd(), 'compiled_docs.md');
-    this.preserveMetadata = options.preserveMetadata !== false;
-    this.removeNavigation = options.removeNavigation !== false;
-    this.removeDuplicates = options.removeDuplicates !== false;
-    this.similarityThreshold = options.similarityThreshold || 0.9;
-    this.sortBy = options.sortBy || null;
-    this.includeLibraries = options.includeLibraries || null;
-    this.excludeLibraries = options.excludeLibraries || [];
-    this.generateToc = options.generateToc || false;
+    this.basePath = options.basePath || process.env.SLURP_BASE_PATH || process.cwd();
+    this.inputDir = this.resolvePath(options.inputDir || process.env.SLURP_INPUT_DIR || 'slurps_docs');
+    this.outputFile = this.resolvePath(options.outputFile || process.env.SLURP_OUTPUT_FILE || 'compiled_docs.md');
+    
+    this.preserveMetadata = options.preserveMetadata !== undefined ?
+      options.preserveMetadata :
+      (process.env.SLURP_PRESERVE_METADATA !== 'false');
+      
+    this.removeNavigation = options.removeNavigation !== undefined ?
+      options.removeNavigation :
+      (process.env.SLURP_REMOVE_NAVIGATION !== 'false');
+      
+    this.removeDuplicates = options.removeDuplicates !== undefined ?
+      options.removeDuplicates :
+      (process.env.SLURP_REMOVE_DUPLICATES !== 'false');
+      
+    this.similarityThreshold = options.similarityThreshold || 
+      parseFloat(process.env.SLURP_SIMILARITY_THRESHOLD) || 0.9;
+      
+    this.sortBy = options.sortBy || process.env.SLURP_SORT_BY || null;
+    this.includeLibraries = options.includeLibraries || 
+      (process.env.SLURP_INCLUDE_LIBRARIES ? process.env.SLURP_INCLUDE_LIBRARIES.split(',') : null);
+      
+    this.excludeLibraries = options.excludeLibraries || 
+      (process.env.SLURP_EXCLUDE_LIBRARIES ? process.env.SLURP_EXCLUDE_LIBRARIES.split(',') : []);
+      
+    this.generateToc = options.generateToc !== undefined ?
+      options.generateToc :
+      (process.env.SLURP_GENERATE_TOC === 'true');
     
     // Default exclude patterns for navigation elements and non-content sections
     this.excludePatterns = options.excludePatterns || [
@@ -67,6 +87,31 @@ class MarkdownCompiler {
       skippedFiles: 0,
       duplicatesRemoved: 0
     };
+  }
+
+  /**
+   * Resolve a path relative to the base path
+   * @param {string} relativePath - Path relative to base
+   * @returns {string} Absolute path
+   */
+  resolvePath(relativePath) {
+    if (!relativePath) return this.basePath;
+    
+    // Handle absolute paths
+    if (path.isAbsolute(relativePath)) {
+      return relativePath;
+    }
+    
+    // Handle home directory
+    if (relativePath.startsWith('~')) {
+      return path.join(
+        os.homedir(),
+        relativePath.substring(1)
+      );
+    }
+    
+    // Resolve relative to base path
+    return path.join(this.basePath, relativePath);
   }
 
   /**
