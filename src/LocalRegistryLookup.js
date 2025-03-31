@@ -2,6 +2,7 @@ const fs = require('fs-extra');
 const path = require('path');
 const axios = require('axios');
 const cheerio = require('cheerio');
+const { URL } = require('url');
 
 /**
  * LocalRegistryLookup - A class for finding documentation for packages
@@ -26,12 +27,34 @@ class LocalRegistryLookup {
     if (this.registry) return this.registry;
     
     try {
-      const data = await fs.readJson(this.registryPath);
-      this.registry = data.docSites;
+      // Check if registry file exists
+      if (await fs.pathExists(this.registryPath)) {
+        const data = await fs.readJson(this.registryPath);
+        this.registry = data.docSites;
+      } else {
+        // Create default registry if file doesn't exist
+        console.log('Registry file not found. Creating a new one.');
+        
+        // Ensure directory exists
+        await fs.ensureDir(path.dirname(this.registryPath));
+        
+        // Create default registry structure
+        const defaultRegistry = {
+          docSites: []
+        };
+        
+        // Save default registry
+        await fs.writeJson(this.registryPath, defaultRegistry, { spaces: 2 });
+        
+        this.registry = defaultRegistry.docSites;
+      }
+      
       return this.registry;
     } catch (error) {
       console.error('Error loading doc site registry:', error);
-      throw error;
+      // Return empty registry instead of throwing
+      this.registry = [];
+      return this.registry;
     }
   }
 
@@ -166,6 +189,134 @@ class LocalRegistryLookup {
     } catch (error) {
       console.error(`Error checking version documentation:`, error);
       return result; // Return empty result as fallback
+    }
+  }
+
+  /**
+   * Save the registry to disk
+   * @returns {Promise<void>}
+   */
+  async saveRegistry() {
+    try {
+      await fs.writeJson(this.registryPath, { docSites: this.registry }, { spaces: 2 });
+    } catch (error) {
+      console.error('Error saving registry:', error);
+    }
+  }
+
+  /**
+   * Add or update a package in the registry
+   * @param {Object} packageInfo - Package information
+   * @returns {Promise<Object>} Updated package entry
+   */
+  async addOrUpdatePackage(packageInfo) {
+    await this.loadRegistry();
+    
+    // Find existing package or create new one
+    let existingIndex = this.registry.findIndex(
+      p => p.name.toLowerCase() === packageInfo.name.toLowerCase()
+    );
+    
+    if (existingIndex >= 0) {
+      // Update existing package
+      this.registry[existingIndex] = {
+        ...this.registry[existingIndex],
+        ...packageInfo,
+        // Preserve creation timestamp if it exists
+        addedAt: this.registry[existingIndex].addedAt || new Date().toISOString(),
+        // Update modified timestamp
+        updatedAt: new Date().toISOString()
+      };
+    } else {
+      // Add new package
+      this.registry.push({
+        ...packageInfo,
+        addedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+    
+    await this.saveRegistry();
+    return existingIndex >= 0 ? this.registry[existingIndex] : this.registry[this.registry.length - 1];
+  }
+  
+  /**
+   * Add a URL-based documentation entry to the registry
+   * @param {string} url - Documentation URL
+   * @param {string} packageName - Package name (optional)
+   * @param {string} version - Version (optional)
+   * @returns {Promise<Object>} Updated registry entry
+   */
+  async addUrlToRegistry(url, packageName, version) {
+    // Extract package name and version from URL if not provided
+    const name = packageName || this.extractPackageNameFromUrl(url) || 
+                 `doc-${new URL(url).hostname.replace(/\./g, '-')}`;
+    
+    return this.addOrUpdatePackage({
+      name,
+      documentationUrl: url,
+      source: 'manual',
+      latestVersion: version || this.extractVersionFromUrl(url)
+    });
+  }
+
+  /**
+   * Extract package name from URL
+   * @param {string} url - URL to extract from
+   * @returns {string|null} Package name or null if not found
+   */
+  extractPackageNameFromUrl(url) {
+    try {
+      const urlObj = new URL(url);
+      
+      // Try to extract from hostname
+      // e.g., reactjs.org -> react, lodash.com -> lodash
+      const hostnameParts = urlObj.hostname.split('.');
+      if (hostnameParts.length >= 2) {
+        const domain = hostnameParts[hostnameParts.length - 2];
+        if (!['github', 'gitlab', 'bitbucket', 'npmjs', 'readthedocs'].includes(domain)) {
+          // Remove common suffixes
+          return domain.replace(/(js|docs|api|dev)$/, '');
+        }
+      }
+      
+      // Try to extract from path
+      // e.g., /docs/react/ -> react, /en/latest/django/ -> django
+      const pathParts = urlObj.pathname.split('/').filter(Boolean);
+      for (const part of pathParts) {
+        // Skip common path segments
+        if (!['docs', 'doc', 'api', 'en', 'latest', 'stable', 'master', 'main'].includes(part)) {
+          return part;
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      return null;
+    }
+  }
+  
+  /**
+   * Extract version from URL
+   * @param {string} url - URL to extract from
+   * @returns {string|null} Version or null if not found
+   */
+  extractVersionFromUrl(url) {
+    try {
+      const urlObj = new URL(url);
+      
+      // Look for version patterns in path
+      // e.g., /v12.0/, /1.2.3/, /en/2.0/
+      const versionRegex = /\/(v?)((\d+)(\.\d+)*)(\.\d+)?(?:[-_]?([a-zA-Z]+\d*))?(?=\/|$)/;
+      const match = urlObj.pathname.match(versionRegex);
+      
+      if (match) {
+        return match[1] + match[2] + (match[5] || '') + (match[6] ? `-${match[6]}` : '');
+      }
+      
+      return null;
+    } catch (error) {
+      return null;
     }
   }
 

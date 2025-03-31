@@ -1,3 +1,4 @@
+require('dotenv').config();
 const DocsToMarkdown = require('./src/DocsToMarkdown');
 const path = require('path');
 
@@ -24,7 +25,7 @@ for (let i = 0; i < args.length; i++) {
 // Set default values
 const baseUrl = params.url || 'https://flask.palletsprojects.com/en/stable/';
 const outputDir = params.output || path.join(__dirname, 'docs');
-const maxPages = parseInt(params.max || '0', 10);
+const maxPages = parseInt(params.max || process.env.MAX_PAGES_PER_SITE || '0', 10);
 const useHeadless = params.headless !== 'false';
 
 // Library and version info

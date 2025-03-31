@@ -94,6 +94,16 @@ flowchart TD
 - Evolution of project decisions
 - Tool usage patterns
 
+## Task Execution Guidelines
+
+- Always carefully read and understand the user's request before proceeding
+- Focus on completing one specific task at a time
+- Don't make assumptions about what needs to be implemented
+- Confirm with the user before making significant changes to files
+- Follow the task sequence as specified by the user
+- DO NOT add debugging code unless explicitly asked to do so
+- If you add debugging code, make sure to remove it before finalizing the task
+
 ## Sensitive File Handling
 
 NEVER overwrite configuration files like `.env` without first reading them and preserving their existing content.

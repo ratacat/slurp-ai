@@ -85,6 +85,14 @@ slurp purge [package] [version]   # Remove documentation from cache
 7. **MCP integration**: Create an MCP server wrapper for AI access
 8. **Site-specific optimizations**: Add configurations for popular doc platforms
 9. **Content processing improvements**: Enhance markdown conversion quality
+10. **Improve table UI rendering**: Replace cli-table3 or enhance implementation to:
+    - Fix column width calculations that don't handle Unicode properly
+    - Improve progress bar rendering to prevent distortion
+    - Consider terminal-kit, blessed, or ink for better table handling
+11. **Enhance package registry lookup**:
+    - Fix case-sensitivity in name matching (registry has "Axios", code looks for "axios")
+    - Normalize package names between registry entries and lookups
+    - Improve handling of scoped packages (@org/package)
 
 ## Architecture
 The project has a clean, modular architecture:
@@ -257,3 +265,138 @@ In addition to documentation, SlurpAI can create context from source code:
 - **Bundling**: Package documentation and source code together
 - **AI Optimization**: Structure content for optimal AI consumption
 - **Minimal Overhead**: Keep context concise and focused on essential information
+
+## User Stories and Registry Management
+
+SlurpAI manages documentation from two distinct sources of truth:
+
+1. **Automatic Discovery**: Documentation fetched from package.json dependencies
+2. **Manual Addition**: Documentation directly added by users with `slurp fetch`
+
+```mermaid
+flowchart TD
+    A[User Request] --> B{Command Type?}
+    
+    %% List Command Path
+    B -->|slurp list| C[Load Registry]
+    C --> D[Display All Packages]
+    D --> E[Indicate Source: Auto/Manual]
+    
+    %% Check Command Path
+    B -->|slurp check| F[Load package.json]
+    F --> G[Compare with Registry]
+    G --> H[Display Status]
+    H --> I[Fetch Missing Docs]
+    
+    %% Fetch Command Path
+    B -->|slurp fetch| J[Check Registry]
+    J -->|Exists| K[Update Existing Entry]
+    J -->|New| L[Add New Entry]
+    L --> M[Mark as Manually Added]
+    K --> M
+    M --> N[Fetch Documentation]
+    
+    %% Purge Command Path
+    B -->|slurp purge| O{Target?}
+    O -->|Specific Package| P[Remove Package]
+    O -->|All Auto-Detected| Q[Warn User]
+    Q --> R[Keep Manual Entries]
+    Q --> S[Remove Auto Entries]
+    O -->|Everything| T[Heavy Warning]
+    T --> U[Clear Registry]
+    
+    %% Rebuild Command Path
+    B -->|slurp rebuild| V[Load Registry]
+    V --> W[Preserve Manual Entries]
+    W --> X[Reprocess package.json]
+    X --> Y[Update Auto Entries]
+    Y --> Z[Re-fetch Documentation]
+```
+
+### Key User Scenarios
+
+1. **Comprehensive Documentation Management**
+
+   **As a developer**, I want to fetch documentation for both my project dependencies AND external packages not in my package.json.
+   
+   **So that** I can have a complete set of documentation for all packages relevant to my project.
+   
+   **This means** SlurpAI must maintain a registry that tracks both automatic (package.json-based) and manually added documentation.
+
+2. **Elegant Source Tracking**
+
+   **As a developer**, I want to clearly see which documentation was automatically discovered and which was manually added.
+   
+   **So that** I can make informed decisions about which documentation to keep or update.
+   
+   **This means** SlurpAI must tag entries in the registry with their source (auto/manual) and display this information in the `slurp list` output.
+
+3. **Selective Documentation Maintenance**
+
+   **As a developer**, I want to purge specific documentation entries without losing my manually added ones.
+   
+   **So that** I can keep my documentation storage clean and relevant.
+   
+   **This means** SlurpAI needs distinct commands:
+   - `slurp purge <package> [version]` - Remove specific package documentation
+   - `slurp purge --auto-only` - Remove only automatically added entries
+   - `slurp purge --all` - Remove all entries (with clear warning)
+
+4. **Documentation Rebuilding**
+
+   **As a developer**, I want to refresh all my project dependency documentation while preserving manually added entries.
+   
+   **So that** I can update documentation without losing valuable manual additions.
+   
+   **This means** SlurpAI needs a `slurp rebuild` command that preserves manual entries while refreshing package.json-based ones.
+
+### Registry Design
+
+The registry must be designed to fail gracefully and track the origin of each documentation entry:
+
+```json
+{
+  "packages": {
+    "express": {
+      "source": "auto",
+      "addedAt": "2025-03-28T14:45:00.000Z",
+      "versions": {
+        "4.18.2": {
+          "documentationUrls": [
+            {
+              "url": "https://expressjs.com/en/4.18/",
+              "type": "official",
+              "confidence": "EXACT"
+            }
+          ],
+          "lastUpdated": "2025-03-28T14:45:00.000Z"
+        }
+      }
+    },
+    "lodash": {
+      "source": "manual",
+      "addedAt": "2025-03-28T15:30:00.000Z",
+      "versions": {
+        "4.17.21": {
+          "documentationUrls": [
+            {
+              "url": "https://lodash.com/docs/4.17.21",
+              "type": "official",
+              "confidence": "EXACT"
+            }
+          ],
+          "lastUpdated": "2025-03-28T15:30:00.000Z"
+        }
+      }
+    }
+  }
+}
+```
+
+This enhanced registry design adds:
+
+1. **Source tracking** (`auto` vs `manual`)
+2. **Addition timestamp** to track when entries were added
+3. Clear separation between versions and package metadata
+
+All commands will respect this dual-source paradigm, providing a seamless experience while maintaining clear boundaries between automatically discovered and manually added documentation.

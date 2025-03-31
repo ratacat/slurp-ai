@@ -5,12 +5,83 @@ const TurndownService = require('turndown');
 const fs = require('fs-extra');
 const path = require('path');
 const { URL } = require('url');
-const PQueue = require('p-queue').default;
+const EventEmitter = require('events');
+const { extract } = require('@extractus/article-extractor');
+require('dotenv').config();
+// Import p-queue using a different approach to avoid ES Module warning
+// This is a workaround for the CommonJS/ES Module compatibility issue
+let PQueue;
+try {
+  // Try to get the default export directly
+  PQueue = require('p-queue');
+  // If PQueue is an object with a default property, use that
+  if (PQueue && typeof PQueue === 'object' && PQueue.default) {
+    PQueue = PQueue.default;
+  }
+} catch (error) {
+  console.error('Error loading p-queue:', error.message);
+  // Fallback to a simple queue implementation if p-queue fails to load
+  PQueue = class SimpleQueue {
+    constructor(options = {}) {
+      this.concurrency = options.concurrency || 1;
+      this._queue = [];
+      this._pending = 0;
+      this._resolveEmpty = null;
+      this._onIdle = null;
+    }
+    
+    add(fn) {
+      const promise = new Promise((resolve, reject) => {
+        this._queue.push({ fn, resolve, reject });
+      });
+      this._process();
+      return promise;
+    }
+    
+    async _process() {
+      if (this._pending >= this.concurrency || this._queue.length === 0) {
+        return;
+      }
+      
+      const item = this._queue.shift();
+      this._pending++;
+      
+      try {
+        const result = await item.fn();
+        item.resolve(result);
+      } catch (error) {
+        item.reject(error);
+      } finally {
+        this._pending--;
+        this._process();
+        
+        if (this._pending === 0 && this._queue.length === 0 && this._resolveEmpty) {
+          this._resolveEmpty();
+        }
+      }
+    }
+    
+    onIdle() {
+      if (this._pending === 0 && this._queue.length === 0) {
+        return Promise.resolve();
+      }
+      
+      return new Promise(resolve => {
+        this._resolveEmpty = resolve;
+      });
+    }
+    
+    get size() {
+      return this._queue.length;
+    }
+  };
+}
 
 /**
  * DocsToMarkdown - A class to scrape documentation sites and convert to markdown
+ * Extends EventEmitter to emit progress events
  */
-class DocsToMarkdown {
+class DocsToMarkdown extends EventEmitter {
   /**
    * Create a new DocScraper
    * @param {Object} options - Configuration options
@@ -26,18 +97,34 @@ class DocsToMarkdown {
    * @param {number} options.retryDelay - Delay between retries in ms (default: 1000)
    */
   constructor(options) {
+    super(); // Call EventEmitter constructor
     this.baseUrl = options.baseUrl;
     this.outputDir = options.outputDir || './docs';
+    this.libraryInfo = options.libraryInfo || {}; // Add library info property
     this.visitedUrls = new Set(); // Fully processed URLs
     this.queuedUrls = new Set(); // URLs in the queue
     this.inProgressUrls = new Set(); // URLs currently being processed
     this.baseUrlObj = new URL(options.baseUrl);
     this.allowedDomains = options.allowedDomains || [this.baseUrlObj.hostname];
-    this.maxPages = options.maxPages || 0;
+    // Use provided maxPages, or fall back to MAX_PAGES_PER_SITE from .env, or default to 0 (unlimited)
+    this.maxPages = options.maxPages !== undefined ? options.maxPages : (parseInt(process.env.MAX_PAGES_PER_SITE, 10) || 0);
     this.useHeadless = options.useHeadless !== false;
-    this.contentSelector = options.contentSelector || 'body';
-    this.excludeSelectors = options.excludeSelectors || [];
     
+    // Basic exclusion selectors for article extraction fallback
+    this.excludeSelectors = [
+      'script',
+      'style',
+      'noscript',
+      'iframe',
+      'object',
+      'embed'
+    ];
+
+    // Allow user-provided exclude selectors to override or add to our defaults
+    if (options.excludeSelectors && Array.isArray(options.excludeSelectors)) {
+      this.excludeSelectors.push(...options.excludeSelectors);
+    }
+
     // Concurrency settings
     this.concurrency = options.concurrency || 5;
     this.retryCount = options.retryCount || 3;
@@ -76,7 +163,7 @@ class DocsToMarkdown {
     const urlObj = new URL(url);
     let filename = urlObj.pathname.replace(/\//g, '_');
     
-    // Handle base URL case
+    // Handle index URL case
     if (filename === '' || filename === '_') {
       filename = 'index';
     }
@@ -90,11 +177,100 @@ class DocsToMarkdown {
   }
 
   /**
+   * Clean up markdown content to remove excessive blank lines and fix formatting
+   * @param {string} markdown - The markdown content to clean up
+   * @returns {string} The cleaned markdown content
+   */
+  cleanupMarkdown(markdown) {
+    let cleaned = markdown
+      // Fix navigation elements with excessive whitespace
+      .replace(/\*\s+\[\s+\n+\s+([^\n]+)\s+\n+\s+\n+\s+\n+\s+\]\(([^)]+)\)/g, '* [$1]($2)')
+      
+      // Clean up excessive blank lines
+      .replace(/\n{3,}/g, '\n\n')
+      
+      // Ensure proper spacing around headings
+      .replace(/\n{2,}(#{1,6}\s)/g, '\n\n$1')
+      .replace(/^(#{1,6}\s.*)\n{3,}/gm, '$1\n\n')
+      
+      // Fix list formatting
+      .replace(/\n{2,}(\*\s)/g, '\n$1')
+      .replace(/(\*\s.*)\n{2,}(\*\s)/g, '$1\n$2')
+      
+      // Clean up code blocks
+      .replace(/```\n{2,}/g, '```\n')
+      .replace(/\n{2,}```/g, '\n```')
+      
+      // Remove empty list items
+      .replace(/\*\s*\n\s*\*/g, '*')
+      
+      // Trim leading/trailing whitespace
+      .trim();
+    
+    // Apply site-specific cleanup if needed
+    if (this.baseUrl && this.baseUrl.includes('modelcontextprotocol.io')) {
+      cleaned = this.cleanupMintlifyMarkdown(cleaned);
+    }
+    
+    return cleaned;
+  }
+  
+  /**
+   * Special cleanup for Mintlify-based sites like modelcontextprotocol.io
+   * @param {string} markdown - The markdown content to clean up
+   * @returns {string} The cleaned markdown content
+   */
+  cleanupMintlifyMarkdown(markdown) {
+    return markdown
+      // Remove navigation links at top
+      .replace(/\[Model Context Protocol home page.*?\]\(index\.md\)/s, '')
+      
+      // Remove search elements
+      .replace(/Search\.\.\.\n\n⌘K\n\nSearch\.\.\.\n\nNavigation/s, '')
+      
+      // Remove duplicate navigation elements
+      .replace(/\[Documentation\n\n\]\(_introduction\.md\)\[SDKs\n\n\]\(_sdk_java_mcp-overview\.md\)\n\n\[Documentation\n\n\]\(_introduction\.md\)\[SDKs\n\n\]\(_sdk_java_mcp-overview\.md\)/s, '')
+      
+      // Remove GitHub link
+      .replace(/\*\s+\[\n\s+\n\s+GitHub\n\s+\n\s+\]\(https:\/\/github\.com\/modelcontextprotocol\)/s, '')
+      
+      // Remove "Was this page helpful" section
+      .replace(/Was this page helpful\?\n\nYesNo/s, '')
+      
+      // Remove "On this page" section and its contents
+      .replace(/On this page[\s\S]*$/s, '')
+      
+      // Remove navigation links at bottom
+      .replace(/\[For Server Developers\]\(_quickstart_server\.md\)/s, '')
+      
+      // Clean up empty sections
+      .replace(/##\s+\[\s+​\s+\]\(#[^\)]+\)\s+\n+##/g, '##')
+      
+      // Fix section headers with links
+      .replace(/##\s+\[\s+​\s+\]\(#([^\)]+)\)\s+([^\n]+)/g, '## $2')
+      .replace(/###\s+\[\s+​\s+\]\(#([^\)]+)\)\s+([^\n]+)/g, '### $2')
+      .replace(/####\s+\[\s+​\s+\]\(#([^\)]+)\)\s+([^\n]+)/g, '#### $2')
+      
+      // Fix empty links with just whitespace
+      .replace(/\[\s+\n+\s+\]\(([^\)]+)\)/g, '')
+      
+      // Fix links with excessive whitespace
+      .replace(/\[\s+\n+\s+([^\n]+)\s+\n+\s+\]\(([^\)]+)\)/g, '[$1]($2)')
+      
+      // Remove any remaining navigation artifacts
+      .replace(/Navigation\s+\n+Get Started\s+\n+Introduction/s, '')
+      
+      // Final cleanup of excessive whitespace
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  /**
    * Configure the Turndown service with custom rules
    */
   configureTurndown() {
     // Preserve code blocks
-    this.turndownService.addRule('codeBlocks', {
+    this.turndownService.addRule('codeBlock', {
       filter: ['pre'],
       replacement: function(content, node) {
         const language = node.querySelector('code') ? 
@@ -102,7 +278,7 @@ class DocsToMarkdown {
         return `\n\`\`\`${language}\n${content}\n\`\`\`\n`;
       }
     });
-
+    
     // Handle tables better
     this.turndownService.addRule('tables', {
       filter: ['table'],
@@ -115,7 +291,7 @@ class DocsToMarkdown {
     // Custom rule for internal links
     const self = this;
     this.turndownService.addRule('internalLinks', {
-      filter: (node, options) => {
+      filter: function(node, options) {
         return node.nodeName === 'A' && node.getAttribute('href');
       },
       replacement: function(content, node, options) {
@@ -135,16 +311,14 @@ class DocsToMarkdown {
             return `[${content}](${href})`;
           }
           
-          // If it's an internal link (same allowed domains)
+          // If it's an internal link (same allowed domain)
           if (self.allowedDomains.includes(url.hostname)) {
             // Store the hash part
             const hash = url.hash;
             
-            // Remove hash part temporarily
+            // Remove hash temporarily
             url.hash = '';
             
-            // Handle relative links consistently by always using
-            // the full URL path pattern from base URL
             let fullUrl;
             
             // If URL is relative (no protocol/hostname), resolve it against base URL
@@ -186,12 +360,12 @@ class DocsToMarkdown {
       }
     });
     
-    // Handle images better
+    // Handle images
     this.turndownService.addRule('images', {
       filter: 'img',
       replacement: function(content, node) {
         const alt = node.getAttribute('alt') || '';
-        let src = node.getAttribute('src') || '';
+        const src = node.getAttribute('src') || '';
         
         // For now, keep image paths as-is
         // Could be enhanced later to download images
@@ -224,6 +398,12 @@ class DocsToMarkdown {
     this.stats.startTime = new Date();
     console.log(`Starting scrape of ${this.baseUrl} with concurrency ${this.concurrency}`);
     
+    // Emit initialization event
+    this.emit('init', {
+      baseUrl: this.baseUrl,
+      maxPages: this.maxPages
+    });
+    
     // Ensure output directory exists
     await fs.ensureDir(this.outputDir);
     
@@ -247,10 +427,23 @@ class DocsToMarkdown {
     this.stats.endTime = new Date();
     const duration = (this.stats.endTime - this.stats.startTime) / 1000;
     
+    // Calculate final stats
+    const stats = {
+      processed: this.stats.processed,
+      failed: this.stats.failed,
+      duration: duration,
+      pagesPerSecond: (this.stats.processed / duration).toFixed(2)
+    };
+    
+    // Emit completion event
+    this.emit('complete', stats);
+    
     console.log(`Scraping complete in ${duration.toFixed(2)} seconds.`);
     console.log(`Processed: ${this.stats.processed} pages`);
     console.log(`Failed: ${this.stats.failed} pages`);
     console.log(`Pages per second: ${(this.stats.processed / duration).toFixed(2)}`);
+    
+    return stats;
   }
 
   /**
@@ -283,6 +476,16 @@ class DocsToMarkdown {
         // Remove from queued and mark as in progress
         this.queuedUrls.delete(url);
         this.inProgressUrls.add(url);
+        
+        // Emit progress event
+        this.emit('progress', {
+          type: 'processing',
+          url: url,
+          processed: this.visitedUrls.size,
+          maxPages: this.maxPages || 'unlimited',
+          queueSize: this.queue.size,
+          inProgress: this.inProgressUrls.size
+        });
         
         console.log(`Processing ${url} (${this.visitedUrls.size}/${this.maxPages || 'unlimited'}) - Queue size: ${this.queue.size}`);
         
@@ -342,8 +545,30 @@ class DocsToMarkdown {
    * @param {CheerioStatic} $ - Cheerio instance with loaded HTML
    */
   async processPage(url, $) {
-    // Extract the main content
-    let content = $(this.contentSelector);
+    try {
+      // First try to extract content using article-extractor
+      const article = await extract(url);
+      
+      if (article && article.content) {
+        // If article extraction was successful, convert the HTML content to markdown
+        let markdown = this.turndownService.turndown(article.content);
+        
+        // Apply post-processing cleanup
+        markdown = this.cleanupMarkdown(markdown);
+        
+        // Save the file with library info
+        await this.saveMarkdown(url, markdown, this.libraryInfo);
+        return;
+      }
+    } catch (error) {
+      console.log(`Article extraction failed for ${url}, falling back to basic extraction: ${error.message}`);
+    }
+    
+    // Fallback to basic extraction if article-extractor fails
+    console.log(`Using fallback extraction for ${url}`);
+    
+    // Extract the main content using basic selectors
+    let content = $('body');
     
     // Remove elements that shouldn't be included
     for (const selector of this.excludeSelectors) {
@@ -351,10 +576,13 @@ class DocsToMarkdown {
     }
     
     // Convert to markdown
-    const markdown = this.turndownService.turndown(content.html() || '');
+    let markdown = this.turndownService.turndown(content.html() || '');
     
-    // Save the file
-    await this.saveMarkdown(url, markdown);
+    // Apply post-processing cleanup
+    markdown = this.cleanupMarkdown(markdown);
+    
+    // Save the file with library info
+    await this.saveMarkdown(url, markdown, this.libraryInfo);
   }
 
   /**
@@ -442,6 +670,19 @@ ${markdown}`;
     
     const outputPath = path.join(outputDir, filename);
     await fs.writeFile(outputPath, content);
+    
+    // Emit saved event
+    this.emit('progress', {
+      type: 'saved',
+      url: url,
+      outputPath: outputPath,
+      processed: this.visitedUrls.size,
+      total: this.maxPages > 0 ? this.maxPages : this.getTotalPageCount(),
+      progress: this.maxPages > 0 ? 
+        Math.floor((this.visitedUrls.size / this.maxPages) * 100) : 
+        Math.floor((this.visitedUrls.size / this.getTotalPageCount()) * 100)
+    });
+    
     console.log(`Saved ${url} to ${outputPath}`);
   }
 }

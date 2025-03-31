@@ -2,6 +2,9 @@
   "name": "slurpai",
   "version": "1.0.0",
   "main": "index.js",
+  "bin": {
+    "slurp": "./slurp.js"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -11,6 +14,7 @@
   "type": "commonjs",
   "description": "",
   "dependencies": {
+    "@extractus/article-extractor": "^8.0.17",
     "axios": "^1.8.4",
     "cheerio": "^1.0.0",
     "dotenv": "^16.4.5",
