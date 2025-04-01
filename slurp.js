@@ -7,6 +7,7 @@ const DocSlurper = require('./src/DocSlurper');
 const { MarkdownCompiler } = require('./src/MarkdownCompiler');
 const path = require('path');
 const fs = require('fs-extra');
+const chalk = require('chalk') || { green: (s) => s, red: (s) => s, yellow: (s) => s, blue: (s) => s, gray: (s) => s };
 
 /**
  * SlurpAI - Documentation scraper for AI systems
@@ -17,6 +18,9 @@ const fs = require('fs-extra');
 const args = process.argv.slice(2);
 const command = args[0]; // The command (read, fetch, list, etc.)
 const params = {};
+
+// Logging configuration
+const verbose = process.env.SLURP_VERBOSE === 'true' || false;
 
 // Parse remaining command line arguments for flags/options
 let i = 1;
@@ -52,8 +56,41 @@ for (; i < args.length; i++) {
   }
 }
 
+/**
+ * Logging utility functions
+ */
+const log = {
+  // Always show these logs
+  info: (message) => console.log(message),
+  success: (message) => console.log(chalk.green(`✅ ${message}`)),
+  error: (message) => console.error(chalk.red(`❌ ${message}`)),
+  warn: (message) => console.log(chalk.yellow(`⚠️ ${message}`)),
+  
+  // Only show in verbose mode
+  verbose: (message) => {
+    if (verbose || params.verbose) {
+      console.log(chalk.gray(`[INFO] ${message}`));
+    }
+  },
+  
+  // Progress updates - only show occasionally
+  progress: (message, force = false) => {
+    if (force || verbose || params.verbose) {
+      console.log(chalk.blue(`[PROGRESS] ${message}`));
+    }
+  },
+  
+  // Summary at the end of operations
+  summary: (title, items) => {
+    console.log(`\n${title}:`);
+    for (const [key, value] of Object.entries(items)) {
+      console.log(`${key}: ${value}`);
+    }
+  }
+};
+
 async function main() {
-  console.log('\n======== SlurpAI Documentation Scraper ========\n');
+  log.info('\n======== SlurpAI Documentation Scraper ========\n');
   
   // Handle commands based on the CLI format in project.md
   switch(command) {
@@ -89,7 +126,7 @@ async function main() {
       
       // Check if the argument is a URL
       if (isUrl(fetchArg)) {
-        console.log(`Detected URL: ${fetchArg}`);
+        log.verbose(`Detected URL: ${fetchArg}`);
         // Use direct URL scraping
         await scrapeFromUrl(fetchArg, null, fetchVersion);
       } else {
@@ -100,7 +137,7 @@ async function main() {
       
     case 'list':
       // List locally available documentation: slurp list
-      console.log('Listing locally available documentation');
+      log.info('Listing locally available documentation');
       
       // Use path for docs directory
       const docsDir = params.output || path.join(__dirname, 'slurps_docs');
@@ -108,8 +145,8 @@ async function main() {
       try {
         // Check if docs directory exists
         if (!await fs.pathExists(docsDir)) {
-          console.log('\n❌ No documentation directory found at:', docsDir);
-          console.log('Run "slurp fetch <package>" to download documentation first.');
+          log.error(`No documentation directory found at: ${docsDir}`);
+          log.info('Run "slurp fetch <package>" to download documentation first.');
           return;
         }
         
@@ -117,14 +154,14 @@ async function main() {
         const packages = await fs.readdir(docsDir);
         
         if (packages.length === 0) {
-          console.log('\n❌ No documentation available yet.');
-          console.log('Run "slurp fetch <package>" to download documentation first.');
+          log.error('No documentation available yet.');
+          log.info('Run "slurp fetch <package>" to download documentation first.');
           return;
         }
         
-        console.log(`\nFound documentation for ${packages.length} packages:`);
-        console.log('\n| Package | Versions | Last Updated |');
-        console.log('|---------|----------|--------------|');
+        log.info(`\nFound documentation for ${packages.length} packages:`);
+        log.info('\n| Package | Versions | Last Updated |');
+        log.info('|---------|----------|--------------|');
         
         // List all packages and their versions
         for (const pkg of packages) {
@@ -151,12 +188,12 @@ async function main() {
           // Format the last updated time
           const lastUpdated = latestTime.toISOString().split('T')[0];
           
-          console.log(`| ${pkg} | ${versionStr} | ${lastUpdated} |`);
+          log.info(`| ${pkg} | ${versionStr} | ${lastUpdated} |`);
         }
         
-        console.log('\nUse "slurp read <package> <version>" to read documentation.');
+        log.info('\nUse "slurp read <package> <version>" to read documentation.');
       } catch (error) {
-        console.error(`❌ Error listing documentation: ${error.message}`);
+        log.error(`Error listing documentation: ${error.message}`);
       }
       break;
       
@@ -179,7 +216,7 @@ async function main() {
       
     case 'compile':
       // Compile documentation: slurp compile [options]
-      console.log('Compiling documentation...');
+      log.info('Compiling documentation...');
       
       // Parse compile-specific options
       const compileOptions = {
@@ -209,28 +246,30 @@ async function main() {
         const result = await compiler.compile();
         
         // Display results
-        console.log('\nCompilation complete!');
-        console.log(`Output file: ${result.outputFile}`);
-        console.log('\nStatistics:');
-        console.log(`- Libraries processed: ${result.stats.totalLibraries}`);
-        console.log(`- Versions processed: ${result.stats.totalVersions}`);
-        console.log(`- Total files found: ${result.stats.totalFiles}`);
-        console.log(`- Files processed: ${result.stats.processedFiles}`);
-        console.log(`- Files skipped: ${result.stats.skippedFiles}`);
-        console.log(`- Duplicates removed: ${result.stats.duplicatesRemoved}`);
+        log.success('Compilation complete!');
+        log.info(`Output file: ${result.outputFile}`);
+        
+        log.summary('Statistics', {
+          'Libraries processed': result.stats.totalLibraries,
+          'Versions processed': result.stats.totalVersions,
+          'Total files found': result.stats.totalFiles,
+          'Files processed': result.stats.processedFiles,
+          'Files skipped': result.stats.skippedFiles,
+          'Duplicates removed': result.stats.duplicatesRemoved
+        });
         
         // Check if any files were processed
         if (result.stats.processedFiles === 0) {
-          console.log('\nNo files were processed. This could be because:');
-          console.log('- The input directory is empty');
-          console.log('- No markdown files were found');
-          console.log('- All files were filtered out as duplicates');
-          console.log('\nCheck your input directory and try again.');
+          log.warn('No files were processed. This could be because:');
+          log.info('- The input directory is empty');
+          log.info('- No markdown files were found');
+          log.info('- All files were filtered out as duplicates');
+          log.info('\nCheck your input directory and try again.');
         } else {
-          console.log(`\nSuccessfully compiled ${result.stats.processedFiles} files into ${result.outputFile}`);
+          log.success(`Successfully compiled ${result.stats.processedFiles} files into ${result.outputFile}`);
         }
       } catch (error) {
-        console.error(`❌ Error during compilation: ${error.message}`);
+        log.error(`Error during compilation: ${error.message}`);
       }
       break;
       
@@ -311,35 +350,35 @@ async function purgeDocumentation(packageName, version) {
   try {
     // Check if docs directory exists
     if (!await fs.pathExists(docsDir)) {
-      console.log('❌ No documentation directory found.');
+      log.error('No documentation directory found.');
       return;
     }
     
     // If no package specified, purge all
     if (!packageName) {
-      console.log('Purging all documentation...');
+      log.info('Purging all documentation...');
       await fs.emptyDir(docsDir);
       
       // Also delete the registry file if it exists
       if (await fs.pathExists(registryPath)) {
-        console.log('Deleting documentation registry...');
+        log.verbose('Deleting documentation registry...');
         await fs.remove(registryPath);
       }
       
-      console.log('✅ All documentation and registry purged successfully.');
+      log.success('All documentation and registry purged successfully.');
       return;
     }
     
     // Check if package directory exists
     const packageDir = path.join(docsDir, packageName);
     if (!await fs.pathExists(packageDir)) {
-      console.log(`❌ No documentation found for ${packageName}.`);
+      log.error(`No documentation found for ${packageName}.`);
       return;
     }
     
     // If no version specified, purge all versions of the package
     if (!version) {
-      console.log(`Purging all documentation for ${packageName}...`);
+      log.info(`Purging all documentation for ${packageName}...`);
       await fs.remove(packageDir);
       
       // Update the registry file if it exists
@@ -351,26 +390,26 @@ async function purgeDocumentation(packageName, version) {
             registryData.docSites = registryData.docSites.filter(site => 
               site.name.toLowerCase() !== packageName.toLowerCase());
             await fs.writeJson(registryPath, registryData, { spaces: 2 });
-            console.log(`Updated documentation registry.`);
+            log.verbose(`Updated documentation registry.`);
           }
         } catch (regError) {
-          console.log(`Note: Could not update registry: ${regError.message}`);
+          log.verbose(`Note: Could not update registry: ${regError.message}`);
         }
       }
       
-      console.log(`✅ Documentation for ${packageName} purged successfully.`);
+      log.success(`Documentation for ${packageName} purged successfully.`);
       return;
     }
     
     // Check if version directory exists
     const versionDir = path.join(packageDir, version);
     if (!await fs.pathExists(versionDir)) {
-      console.log(`❌ No documentation found for ${packageName}@${version}.`);
+      log.error(`No documentation found for ${packageName}@${version}.`);
       return;
     }
     
     // Purge specific version
-    console.log(`Purging documentation for ${packageName}@${version}...`);
+    log.info(`Purging documentation for ${packageName}@${version}...`);
     await fs.remove(versionDir);
     
     // Check if there are any other versions left
@@ -388,18 +427,18 @@ async function purgeDocumentation(packageName, version) {
             registryData.docSites = registryData.docSites.filter(site => 
               site.name.toLowerCase() !== packageName.toLowerCase());
             await fs.writeJson(registryPath, registryData, { spaces: 2 });
-            console.log(`Updated documentation registry.`);
+            log.verbose(`Updated documentation registry.`);
           }
         } catch (regError) {
-          console.log(`Note: Could not update registry: ${regError.message}`);
+          log.verbose(`Note: Could not update registry: ${regError.message}`);
         }
       }
     }
     
-    console.log(`✅ Documentation for ${packageName}@${version} purged successfully.`);
+    log.success(`Documentation for ${packageName}@${version} purged successfully.`);
     
   } catch (error) {
-    console.error(`❌ Error purging documentation: ${error.message}`);
+    log.error(`Error purging documentation: ${error.message}`);
   }
 }
 
@@ -409,14 +448,14 @@ async function purgeDocumentation(packageName, version) {
  * @param {string} version - Version of the package (optional)
  */
 async function scrapePackageDocumentation(packageName, version) {
-  console.log(`Finding documentation for ${packageName}${version ? `@${version}` : ''}...`);
+  log.info(`Finding documentation for ${packageName}${version ? `@${version}` : ''}...`);
   
   try {
     // If no version is provided, try to get it from package.json
     if (!version) {
       const packageJsonVersion = await getVersionFromPackageJson(packageName);
       if (packageJsonVersion) {
-        console.log(`Found version ${packageJsonVersion} in package.json`);
+        log.verbose(`Found version ${packageJsonVersion} in package.json`);
         version = packageJsonVersion;
       }
     }
@@ -426,27 +465,26 @@ async function scrapePackageDocumentation(packageName, version) {
     const docInfo = await registryLookup.findVersionDocUrl(packageName, version);
     
     if (!docInfo.found) {
-      console.error(`❌ ${docInfo.message}`);
+      log.error(docInfo.message);
       return;
     }
     
-    console.log(`✅ ${docInfo.message}`);
-    console.log(`URL: ${docInfo.url}`);
-    console.log(`Version match: ${docInfo.exactMatch ? 'Exact' : 'Approximate'}`);
+    log.success(`${docInfo.message} (${docInfo.exactMatch ? 'Exact match' : 'Approximate match'})`);
+    log.verbose(`URL: ${docInfo.url}`);
     
     // Ask for confirmation to start scraping
     if (!params.yes) {
-      console.log('\nDo you want to scrape this documentation? (Y/n)');
+      log.info('\nDo you want to scrape this documentation? (Y/n)');
       const answer = await waitForInput();
       
       if (answer && answer.toLowerCase() !== 'y') {
-        console.log('Scraping canceled.');
+        log.info('Scraping canceled.');
         return;
       }
     }
     
     // Scrape the documentation
-    console.log(`\nStarting documentation scraping for ${packageName}...`);
+    log.info(`Starting documentation scraping for ${packageName}...`);
     
       // Configure the scraper
       const scrapeConfig = {
@@ -490,13 +528,42 @@ async function scrapePackageDocumentation(packageName, version) {
     };
     
     const scraper = new DocsToMarkdown(scrapeConfig);
+    
+    // Configure scraper to use our logging system
+    scraper.on('init', (data) => {
+      log.verbose(`Initialized scraper for ${packageName}, max pages: ${data.maxPages}`);
+    });
+    
+    scraper.on('progress', (data) => {
+      if (data.type === 'processing') {
+        // Only log occasionally to reduce noise
+        if (data.processed % 10 === 0 || data.processed === 1) {
+          log.progress(`Processing page ${data.processed}/${data.maxPages || 'unlimited'} (Queue: ${data.queueSize})`, data.processed === 1);
+        }
+      } else if (data.type === 'saved') {
+        // Only log major milestones
+        if (data.progress % 25 === 0 || data.progress >= 95) {
+          log.progress(`Saving progress: ${Math.floor(data.progress)}%`);
+        }
+      }
+    });
+    
+    scraper.on('complete', (stats) => {
+      log.summary('Scraping Stats', {
+        'Pages processed': stats.processed,
+        'Failed pages': stats.failed,
+        'Duration': `${stats.duration.toFixed(1)}s`,
+        'Pages per second': stats.pagesPerSecond
+      });
+    });
+    
     await scraper.start();
     
-    console.log('\n✅ Documentation scraping completed successfully!');
-    console.log(`Markdown files have been saved to: ${path.join(scrapeConfig.outputDir, packageName, version || docInfo.packageInfo.latestVersion)}`);
+    log.success('Documentation scraping completed successfully!');
+    log.info(`Markdown files have been saved to: ${path.join(scrapeConfig.outputDir, packageName, version || docInfo.packageInfo.latestVersion)}`);
     
   } catch (error) {
-    console.error(`❌ Error: ${error.message}`);
+    log.error(`Error: ${error.message}`);
   }
 }
 
@@ -507,7 +574,7 @@ async function scrapePackageDocumentation(packageName, version) {
  * @param {string} version - Version (optional)
  */
 async function scrapeFromUrl(url, library, version) {
-  console.log(`Scraping documentation from ${url}...`);
+  log.info(`Scraping documentation from ${url}...`);
   
   try {
     // Generate library name from URL if not provided
@@ -608,19 +675,48 @@ async function scrapeFromUrl(url, library, version) {
     try {
       const registryLookup = new LocalRegistryLookup();
       await registryLookup.addUrlToRegistry(url, generatedLibrary, version);
-      console.log(`Added ${url} to registry as "${generatedLibrary}"`);
+      log.verbose(`Added ${url} to registry as "${generatedLibrary}"`);
     } catch (regError) {
-      console.warn(`Note: Could not add to registry: ${regError.message}`);
+      log.verbose(`Note: Could not add to registry: ${regError.message}`);
     }
     
     const scraper = new DocsToMarkdown(scrapeConfig);
+    
+    // Configure scraper to use our logging system
+    scraper.on('init', (data) => {
+      log.verbose(`Initialized scraper for ${url}, max pages: ${data.maxPages}`);
+    });
+    
+    scraper.on('progress', (data) => {
+      if (data.type === 'processing') {
+        // Only log occasionally to reduce noise
+        if (data.processed % 10 === 0 || data.processed === 1) {
+          log.progress(`Processing page ${data.processed}/${data.maxPages || 'unlimited'} (Queue: ${data.queueSize})`, data.processed === 1);
+        }
+      } else if (data.type === 'saved') {
+        // Only log major milestones
+        if (data.progress % 25 === 0 || data.progress >= 95) {
+          log.progress(`Saving progress: ${Math.floor(data.progress)}%`);
+        }
+      }
+    });
+    
+    scraper.on('complete', (stats) => {
+      log.summary('Scraping Stats', {
+        'Pages processed': stats.processed,
+        'Failed pages': stats.failed,
+        'Duration': `${stats.duration.toFixed(1)}s`,
+        'Pages per second': stats.pagesPerSecond
+      });
+    });
+    
     await scraper.start();
     
-    console.log('\n✅ Documentation scraping completed successfully!');
-    console.log(`Markdown files have been saved to: ${structuredOutputDir}`);
+    log.success('Documentation scraping completed successfully!');
+    log.info(`Markdown files have been saved to: ${structuredOutputDir}`);
     
   } catch (error) {
-    console.error(`❌ Error: ${error.message}`);
+    log.error(`Error: ${error.message}`);
   }
 }
 
@@ -670,7 +766,7 @@ function extractNameFromUrl(url) {
  * @param {string} packageJsonPath - Path to package.json file
  */
 async function scrapeFromPackageJson(packageJsonPath) {
-  console.log(`Analyzing dependencies in ${packageJsonPath}...`);
+  log.info(`Analyzing dependencies in ${packageJsonPath}...`);
   
   try {
     // Normalize the path
@@ -678,7 +774,7 @@ async function scrapeFromPackageJson(packageJsonPath) {
     
     // Check if the file exists
     if (!await fs.pathExists(normalizedPath)) {
-      console.error(`❌ File not found: ${normalizedPath}`);
+      log.error(`File not found: ${normalizedPath}`);
       return;
     }
     
@@ -686,11 +782,11 @@ async function scrapeFromPackageJson(packageJsonPath) {
     const registryLookup = new LocalRegistryLookup();
     const dependencies = await registryLookup.analyzeDependencies(normalizedPath);
     
-    console.log(`\nFound ${dependencies.length} dependencies in ${packageJsonPath}`);
+    log.info(`Found ${dependencies.length} dependencies in ${packageJsonPath}`);
     
     // Display dependencies in a simple format
-    console.log('\nDependency Analysis:');
-    console.log('-------------------');
+    log.info('\nDependency Analysis:');
+    log.info('-------------------');
     
     // Filter to found dependencies
     const foundDeps = dependencies.filter(dep => dep.found);
@@ -699,13 +795,13 @@ async function scrapeFromPackageJson(packageJsonPath) {
     for (const dep of dependencies) {
       const status = dep.found ? '✅' : '❌';
       const confidence = dep.exactMatch ? 'EXACT' : (dep.found ? 'CLOSE' : 'N/A');
-      console.log(`${status} ${dep.package}@${dep.version} - ${dep.found ? 'Documentation available' : 'No documentation found'} (${confidence})`);
+      log.info(`${status} ${dep.package}@${dep.version} - ${dep.found ? 'Documentation available' : 'No documentation found'} (${confidence})`);
     }
     
-    console.log(`\nSummary: Found documentation for ${foundDeps.length} out of ${dependencies.length} dependencies.`);
+    log.info(`\nSummary: Found documentation for ${foundDeps.length} out of ${dependencies.length} dependencies.`);
     
     if (foundDeps.length === 0) {
-      console.log('\n❌ No documentation found for any dependencies.');
+      log.error('No documentation found for any dependencies.');
       return;
     }
     
@@ -715,14 +811,14 @@ async function scrapeFromPackageJson(packageJsonPath) {
     if (params.yes) {
       // Auto-scrape all dependencies with --yes flag
       packagesToScrape = foundDeps;
-      console.log(`\nAuto-scraping documentation for ${packagesToScrape.length} packages...`);
+      log.info(`Auto-scraping documentation for ${packagesToScrape.length} packages...`);
     } else {
       // Ask which dependencies to scrape
-      console.log('\nDo you want to scrape documentation for these packages? (all/none/comma-separated list)');
+      log.info('\nDo you want to scrape documentation for these packages? (all/none/comma-separated list)');
       const answer = await waitForInput();
       
       if (!answer || answer.toLowerCase() === 'none') {
-        console.log('Scraping canceled.');
+        log.info('Scraping canceled.');
         return;
       }
       
@@ -734,7 +830,7 @@ async function scrapeFromPackageJson(packageJsonPath) {
         packagesToScrape = foundDeps.filter(dep => packageNames.includes(dep.package));
       }
       
-      console.log(`\nScraping documentation for ${packagesToScrape.length} packages...`);
+      log.info(`Scraping documentation for ${packagesToScrape.length} packages...`);
     }
     
     // Scrape selected dependencies
@@ -742,14 +838,14 @@ async function scrapeFromPackageJson(packageJsonPath) {
     const startTime = Date.now();
     
     for (const dep of packagesToScrape) {
-      console.log(`\n[${dep.package}] Fetching documentation...`);
+      log.info(`\n[${dep.package}] Fetching documentation...`);
       
       try {
         // Find documentation URL
         const docInfo = await registryLookup.findVersionDocUrl(dep.package, dep.version);
         
         if (!docInfo.found) {
-          console.log(`[${dep.package}] ❌ Failed: No documentation found`);
+          log.error(`[${dep.package}] Failed: No documentation found`);
           continue;
         }
         
@@ -757,9 +853,9 @@ async function scrapeFromPackageJson(packageJsonPath) {
         const confidence = docInfo.exactMatch ? 'EXACT' : 'CLOSE';
         const docVersion = docInfo.packageInfo?.latestVersion || dep.version;
         
-        console.log(`[${dep.package}] Found documentation at: ${docInfo.url}`);
-        console.log(`[${dep.package}] Version match: ${confidence}, Doc version: ${docVersion}`);
-        console.log(`[${dep.package}] Downloading...`);
+        log.verbose(`[${dep.package}] Found documentation at: ${docInfo.url}`);
+        log.verbose(`[${dep.package}] Version match: ${confidence}, Doc version: ${docVersion}`);
+        log.info(`[${dep.package}] Downloading...`);
         
         // Configure the scraper
         const scrapeConfig = {
@@ -796,44 +892,46 @@ async function scrapeFromPackageJson(packageJsonPath) {
         
         // Listen for progress events
         scraper.on('init', (data) => {
-          console.log(`[${dep.package}] Initialized scraper, max pages: ${data.maxPages}`);
+          log.verbose(`[${dep.package}] Initialized scraper, max pages: ${data.maxPages}`);
         });
         
         scraper.on('progress', (data) => {
           if (data.type === 'processing') {
-            // Only log every 5th page to avoid console spam
-            if (data.processed % 5 === 0 || data.processed === 1) {
-              console.log(`[${dep.package}] Processing page ${data.processed}/${data.maxPages || 'unlimited'}`);
+            // Only log occasionally to reduce noise
+            if (data.processed % 10 === 0 || data.processed === 1) {
+              log.progress(`[${dep.package}] Processing page ${data.processed}/${data.maxPages || 'unlimited'}`, data.processed === 1);
             }
           } else if (data.type === 'saved') {
-            // Only log every 5th save to avoid console spam
-            if (data.progress % 20 === 0 || data.progress >= 95) {
-              console.log(`[${dep.package}] Saving progress: ${Math.floor(data.progress)}%`);
+            // Only log major milestones
+            if (data.progress % 25 === 0 || data.progress >= 95) {
+              log.progress(`[${dep.package}] Saving progress: ${Math.floor(data.progress)}%`);
             }
           }
         });
         
         scraper.on('complete', (stats) => {
           downloadedCount++;
-          console.log(`[${dep.package}] ✅ Downloaded ${stats.processed} pages in ${stats.duration.toFixed(1)}s`);
+          log.success(`[${dep.package}] Downloaded ${stats.processed} pages in ${stats.duration.toFixed(1)}s`);
         });
         
         // Start scraping
         await scraper.start();
         
       } catch (error) {
-        console.log(`[${dep.package}] ❌ Failed: ${error.message}`);
+        log.error(`[${dep.package}] Failed: ${error.message}`);
       }
     }
     
     // Display final summary
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`\n✅ Documentation check completed in ${duration}s`);
-    console.log(`Found: ${foundDeps.length}/${dependencies.length} packages`);
-    console.log(`Downloaded: ${downloadedCount} package(s)`);
-    
+    log.success(`Documentation check completed in ${duration}s`);
+    log.summary('Results', {
+      'Found': `${foundDeps.length}/${dependencies.length} packages`,
+      'Downloaded': `${downloadedCount} package(s)`,
+      'Duration': `${duration}s`
+    });
   } catch (error) {
-    console.error(`❌ Error: ${error.message}`);
+    log.error(`Error: ${error.message}`);
   }
 }
 

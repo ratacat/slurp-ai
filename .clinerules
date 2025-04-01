@@ -184,5 +184,6 @@ flowchart TD
 - Never use write_to_file for existing config files without preserving content
 - Use replace_in_file with careful targeting for config updates
 - When in doubt, ask the user before modifying configuration files
+- Only run git commands if explicitly asked to do so
 
 The format is flexible - focus on capturing valuable insights that help me work more effectively with you and the project. Think of .clinerules as a living document that grows smarter as we work together.
