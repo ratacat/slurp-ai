@@ -90,7 +90,108 @@ const log = {
 };
 
 async function main() {
-  log.info('\n======== SlurpAI Documentation Scraper ========\n');
+  // Check for direct URL mode first (before entering the switch)
+  if (command && isUrl(command)) {
+    // This is the new 'slurp <url>' command that combines fetch and compile in one step
+    // First, scrape the URL (equivalent to slurp fetch <url>), then compile the results
+    const url = command;
+    
+    // Set a special flag for direct URL mode to control output
+    const directUrlMode = true;
+    
+    // Suppress all output initially
+    const originalConsoleLog = console.log;
+    const originalConsoleError = console.error;
+    const originalConsoleWarn = console.warn;
+    
+    // Override console methods to hide warnings and verbose output
+    console.log = function() {
+      // Only log if it's an error or specific important messages
+      if (arguments[0] && typeof arguments[0] === 'string' &&
+          (arguments[0].includes('Error') || arguments[0].includes('Failed'))) {
+        // In direct URL mode, don't automatically show "Failed: 0 pages"
+        if (directUrlMode && arguments[0].includes('Failed: 0 pages')) {
+          return; // Skip this message in direct URL mode
+        }
+        originalConsoleLog.apply(console, arguments);
+      }
+    };
+    console.error = function() {};
+    console.warn = function() {};
+    
+    // Also suppress process warnings
+    process.env.NODE_NO_WARNINGS = '1';
+    
+    const result = await scrapeFromUrl(url, null, null);
+    
+    // Restore original console methods
+    console.log = originalConsoleLog;
+    console.error = originalConsoleError;
+    console.warn = originalConsoleWarn;
+    
+    // Check if the scraping was successful
+    if (!result || !result.success) {
+      log.error('Failed to fetch documentation. Skipping compile step.');
+      return;
+    }
+    
+    // Now run the compile step (equivalent to slurp compile)
+    // Extract a descriptive name from the URL for the output filename
+    
+    // Determine a proper name for the library based on the URL
+    // The hostname should look like "reactjs.org" for reactjs
+    const urlObj = new URL(url);
+    let siteName = '';
+    
+    // Get domain name without TLD
+    const domainMatch = urlObj.hostname.match(/([^.]+)\.[^.]+$/);
+    if (domainMatch && domainMatch[1]) {
+      siteName = domainMatch[1];
+    } else {
+      // Fallback to first part of hostname
+      siteName = urlObj.hostname.split('.')[0];
+    }
+    
+    // Try to get a meaningful name, with fallbacks
+    const outputName = siteName || '';
+    const outputFilename = `${outputName}_docs.md`;
+    
+    // Use 'compiled' as the standard output directory, but allow it to be configurable via .env
+    const outputDir = process.env.SLURP_COMPILED_DIR || 'compiled';
+    
+    // Ensure output directory exists
+    await fs.ensureDir(path.join(__dirname, outputDir));
+    
+    // Extract the input directory name to use as part of the output filename
+    // This ensures we maintain the domain name in the output file
+    const directCompileOptions = {
+      inputDir: result.outputDir,
+      // Force the output filename to be based on the domain name,
+      // not relying on env variables which might override it
+      outputFile: path.join(__dirname, outputDir, outputFilename),
+      // Also set output name directly to override any defaults
+      outputName: outputName,
+      preserveMetadata: process.env.SLURP_PRESERVE_METADATA !== 'false',
+      removeNavigation: process.env.SLURP_REMOVE_NAVIGATION !== 'false',
+      removeDuplicates: process.env.SLURP_REMOVE_DUPLICATES !== 'false'
+    };
+    
+    try {
+      // We've already ensured the output directory exists above
+      
+      // Create compiler instance
+      const compiler = new MarkdownCompiler(directCompileOptions);
+      
+      // Run compilation
+      const compileResult = await compiler.compile();
+      
+      // Display minimal results
+      log.info(`Compiled to ${path.basename(compileResult.outputFile)}`);
+    } catch (error) {
+      log.error(`Error during compilation: ${error.message}`);
+    }
+    return;
+  }
   
   // Handle commands based on the CLI format in project.md
   switch(command) {
@@ -568,14 +669,15 @@ async function scrapePackageDocumentation(packageName, version) {
 }
 
 /**
+ * @param {string} library - Name of the library (optional)
+ * @param {string} version - Version of the library (optional)
+ * @returns {Object} Result object with success status and outputDir
  * Scrape documentation from a specific URL
  * @param {string} url - URL to scrape
  * @param {string} library - Library name (optional)
  * @param {string} version - Version (optional)
  */
 async function scrapeFromUrl(url, library, version) {
-  log.info(`Scraping documentation from ${url}...`);
-  
   try {
     // Generate library name from URL if not provided
     const urlObj = new URL(url);
@@ -682,41 +784,58 @@ async function scrapeFromUrl(url, library, version) {
     
     const scraper = new DocsToMarkdown(scrapeConfig);
     
-    // Configure scraper to use our logging system
-    scraper.on('init', (data) => {
-      log.verbose(`Initialized scraper for ${url}, max pages: ${data.maxPages}`);
-    });
+    // Set up minimal logging
+    let processed = 0;
+    let failedPages = 0;
     
+    // One-line progress reporting with minimal output
+    scraper.on('init', () => {});
+    
+    // Only show one line of output periodically
     scraper.on('progress', (data) => {
       if (data.type === 'processing') {
-        // Only log occasionally to reduce noise
-        if (data.processed % 10 === 0 || data.processed === 1) {
-          log.progress(`Processing page ${data.processed}/${data.maxPages || 'unlimited'} (Queue: ${data.queueSize})`, data.processed === 1);
+        processed++;
+        // Only log once every 5 documents or for the first one
+        if (processed % 5 === 0 || processed === 1) {
+          process.stdout.write(`\rProcessing documents: ${processed}`);
         }
-      } else if (data.type === 'saved') {
-        // Only log major milestones
-        if (data.progress % 25 === 0 || data.progress >= 95) {
-          log.progress(`Saving progress: ${Math.floor(data.progress)}%`);
-        }
+      } else if (data.type === 'failed') {
+        failedPages++;
       }
     });
     
+    // Create a variable to store the stats for later use
+    let scrapingStats = null;
+
     scraper.on('complete', (stats) => {
-      log.summary('Scraping Stats', {
-        'Pages processed': stats.processed,
-        'Failed pages': stats.failed,
-        'Duration': `${stats.duration.toFixed(1)}s`,
-        'Pages per second': stats.pagesPerSecond
-      });
+      // Store stats for later without displaying them yet
+      scrapingStats = stats;
+      
+      // Add a newline after processing is complete
+      process.stdout.write('\n');
+      
+      // Only display failure info if there were failures
+      if (stats.failed > 0) {
+        process.stdout.write(`Failed: ${stats.failed} pages\n`);
+      }
     });
     
     await scraper.start();
     
-    log.success('Documentation scraping completed successfully!');
-    log.info(`Markdown files have been saved to: ${structuredOutputDir}`);
+    // Return success result information for chaining
+    return {
+      success: true,
+      outputDir: structuredOutputDir,
+      libraryName: generatedLibrary
+    };
+    
     
   } catch (error) {
     log.error(`Error: ${error.message}`);
+    // Return failure information
+    return {
+      success: false
+    };
   }
 }
 
@@ -958,11 +1077,11 @@ function waitForInput() {
 function showHelp() {
   console.log(`
 SlurpAI Documentation Scraper
-
 Usage:
   slurp <command> [arguments] [options]
 
 Commands:
+  <url>                         Fetch and compile documentation in one step
   read <package> [version]      Read local documentation
   fetch <package|url> [version] Find and download documentation
   list                          List locally available documentation
@@ -971,6 +1090,9 @@ Commands:
   compile [options]             Compile documentation into a single file
 
 Examples:
+  Direct URL mode (fetch and compile):
+    slurp https://modelcontextprotocol.io/introduction
+
   Read local documentation:
     slurp read express 4.18.2
 

@@ -25,8 +25,8 @@ class MarkdownCompiler {
    */
   constructor(options = {}) {
     this.basePath = options.basePath || process.env.SLURP_BASE_PATH || process.cwd();
-    this.inputDir = this.resolvePath(options.inputDir || process.env.SLURP_INPUT_DIR || 'slurps_docs');
-    this.outputFile = this.resolvePath(options.outputFile || process.env.SLURP_OUTPUT_FILE || 'compiled_docs.md');
+    this.inputDir = this.resolvePath(options.inputDir || process.env.SLURP_INPUT_DIR || 'slurps');
+    this.outputFile = this.resolvePath(options.outputFile || 'compiled.md');
     
     this.preserveMetadata = options.preserveMetadata !== undefined ?
       options.preserveMetadata :

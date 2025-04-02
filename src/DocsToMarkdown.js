@@ -748,11 +748,8 @@ class DocsToMarkdown extends EventEmitter {
         return;
       }
     } catch (error) {
-      console.log(`Article extraction failed for ${url}, falling back to basic extraction: ${error.message}`);
+      // Fallback to basic extraction if article-extractor fails
     }
-    
-    // Fallback to basic extraction if article-extractor fails
-    console.log(`Using fallback extraction for ${url}`);
     
     // Extract the main content using basic selectors
     let content = $('body');
