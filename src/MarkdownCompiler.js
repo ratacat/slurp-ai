@@ -80,8 +80,6 @@ class MarkdownCompiler {
     
     // Statistics
     this.stats = {
-      totalLibraries: 0,
-      totalVersions: 0,
       totalFiles: 0,
       processedFiles: 0,
       skippedFiles: 0,
@@ -125,61 +123,12 @@ class MarkdownCompiler {
         throw new Error(`Input directory not found: ${this.inputDir}`);
       }
       
-      // Get all libraries (top-level directories)
-      const libraries = await fs.readdir(this.inputDir);
-      this.stats.totalLibraries = libraries.length;
-      
       // Initialize output content
       let outputContent = `# Compiled Documentation\n\nGenerated on ${new Date().toISOString()}\n\n`;
       
-      // Process each library
-      for (const library of libraries) {
-        const libraryPath = path.join(this.inputDir, library);
-        
-        // Skip if not a directory
-        if (!(await fs.stat(libraryPath)).isDirectory()) {
-          continue;
-        }
-        
-        // Add library heading
-        outputContent += `## ${library}\n\n`;
-        
-        // Get all versions for this library
-        const versions = await fs.readdir(libraryPath);
-        this.stats.totalVersions += versions.length;
-        
-        // Process each version
-        for (const version of versions) {
-          const versionPath = path.join(libraryPath, version);
-          
-          // Skip if not a directory
-          if (!(await fs.stat(versionPath)).isDirectory()) {
-            continue;
-          }
-          
-          // Add version heading
-          outputContent += `### Version ${version}\n\n`;
-          
-          // Get all markdown files for this version
-          const files = await this.findMarkdownFiles(versionPath);
-          this.stats.totalFiles += files.length;
-          
-          // Process each file
-          for (const file of files) {
-            const fileContent = await this.processFile(file, library, version);
-            
-            // Skip if file was filtered out (e.g., duplicate content)
-            if (!fileContent) {
-              this.stats.skippedFiles++;
-              continue;
-            }
-            
-            // Add file content to output
-            outputContent += fileContent;
-            this.stats.processedFiles++;
-          }
-        }
-      }
+      // Process the directory recursively
+      const processedContent = await this.processDirectoryContent(this.inputDir);
+      outputContent += processedContent;
       
       // Write output file
       await fs.ensureDir(path.dirname(this.outputFile));
@@ -194,32 +143,66 @@ class MarkdownCompiler {
       throw error;
     }
   }
-
+  
   /**
-   * Find all markdown files in a directory recursively
-   * @param {string} dir - Directory to search
-   * @returns {Promise<string[]>} Array of file paths
+   * Process a directory's content recursively
+   * @param {string} dir - Directory to process
+   * @param {number} level - Current heading level (starts at 2)
+   * @param {string} relativePath - Path relative to input directory
+   * @returns {Promise<string>} Processed content
    */
-  async findMarkdownFiles(dir) {
-    const files = await fs.readdir(dir);
-    const markdownFiles = [];
+  async processDirectoryContent(dir, level = 2, relativePath = '') {
+    let content = '';
     
-    for (const file of files) {
+    // Get all entries in the directory
+    const entries = await fs.readdir(dir);
+    
+    // Add heading for this directory if it's not the root
+    if (relativePath) {
+      const dirName = path.basename(dir);
+      content += `${'#'.repeat(Math.min(level, 6))} ${dirName}\n\n`;
+    }
+    
+    // Process markdown files in this directory
+    const markdownFiles = entries.filter(entry =>
+      entry.endsWith('.md') && fs.statSync(path.join(dir, entry)).isFile()
+    );
+    
+    this.stats.totalFiles += markdownFiles.length;
+    
+    for (const file of markdownFiles) {
       const filePath = path.join(dir, file);
-      const stat = await fs.stat(filePath);
+      const fileContent = await this.processFile(filePath);
       
-      if (stat.isDirectory()) {
-        // Recursively search subdirectories
-        const subFiles = await this.findMarkdownFiles(filePath);
-        markdownFiles.push(...subFiles);
-      } else if (file.endsWith('.md')) {
-        // Add markdown files
-        markdownFiles.push(filePath);
+      if (fileContent) {
+        content += fileContent;
+        this.stats.processedFiles++;
+      } else {
+        this.stats.skippedFiles++;
       }
     }
     
-    return markdownFiles;
+    // Process subdirectories
+    const subdirs = entries.filter(entry =>
+      fs.statSync(path.join(dir, entry)).isDirectory()
+    );
+    
+    for (const subdir of subdirs) {
+      const subdirPath = path.join(dir, subdir);
+      const newRelativePath = path.join(relativePath, subdir);
+      
+      const subdirContent = await this.processDirectoryContent(
+        subdirPath,
+        level + 1,
+        newRelativePath
+      );
+      
+      content += subdirContent;
+    }
+    
+    return content;
   }
+
 
   /**
    * Process a markdown file
@@ -228,7 +211,7 @@ class MarkdownCompiler {
    * @param {string} version - Library version
    * @returns {Promise<string|null>} Processed content or null if skipped
    */
-  async processFile(filePath, library, version) {
+  async processFile(filePath) {
     try {
       // Read file content
       const content = await fs.readFile(filePath, 'utf8');

@@ -87,12 +87,13 @@ Options:
   --help, -h                 Show this help message
   --base-path, -b <path>     Base path for all operations (default: current directory or SLURP_BASE_PATH)
   --input, -i <dir>          Input directory (default: ./slurps_docs or SLURP_INPUT_DIR)
+                              Can be any directory containing markdown files - will be processed recursively
   --output, -o <file>        Output file (default: ./compiled_docs.md or SLURP_OUTPUT_FILE)
   --preserve-metadata <bool> Whether to preserve metadata (default: true or SLURP_PRESERVE_METADATA)
   --remove-navigation <bool> Whether to remove navigation links (default: true or SLURP_REMOVE_NAVIGATION)
   --remove-duplicates <bool> Whether to remove duplicate content (default: true or SLURP_REMOVE_DUPLICATES)
   --exclude <json>           JSON array of regex patterns to exclude
-                             Example: --exclude '["Was this helpful\\?", "On this page"]'
+                              Example: --exclude '["Was this helpful\\?", "On this page"]'
 
 Environment Variables:
   SLURP_BASE_PATH            Base path for all operations
@@ -108,6 +109,9 @@ Examples:
 
   # Custom input/output paths
   node compile.js --input ./my-docs --output ./compiled.md
+
+  # Compile a specific folder (works with any folder structure)
+  node compile.js --input ./slurps_docs/modelcontextprotocol/docs --output ./mcp.md
 
   # Using base path
   node compile.js --base-path ~/projects/docs --input docs --output compiled.md
@@ -152,8 +156,6 @@ async function main() {
     console.log('\nCompilation complete!');
     console.log(`Output file: ${result.outputFile}`);
     console.log('\nStatistics:');
-    console.log(`- Libraries processed: ${result.stats.totalLibraries}`);
-    console.log(`- Versions processed: ${result.stats.totalVersions}`);
     console.log(`- Total files found: ${result.stats.totalFiles}`);
     console.log(`- Files processed: ${result.stats.processedFiles}`);
     console.log(`- Files skipped: ${result.stats.skippedFiles}`);
