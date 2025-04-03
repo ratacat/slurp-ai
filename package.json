@@ -3,12 +3,10 @@
   "version": "1.0.0",
   "main": "index.js",
   "bin": {
-    "slurp": "./slurp.js",
-    "slurp-compile": "./compile.js"
+    "slurp": "./cli.js"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "compile": "node compile.js"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",

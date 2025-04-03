@@ -1,13 +1,13 @@
 # Compiled Documentation
 
-Generated on 2025-04-03T05:03:02.064Z
+Generated on 2025-04-03T05:56:38.716Z
 
 ### v4
 
 #### _docs_v4.md
 
 > Source: https://socket.io/docs/v4
-> Scraped: 4/2/2025, 11:03:00 PM
+> Scraped: 4/2/2025, 11:56:36 PM
 
 tip
 
@@ -239,7 +239,7 @@ Please check our [Troubleshooting guide](_docs_v4_troubleshooting-connection-iss
 #### _docs_v4_.md
 
 > Source: https://socket.io/docs/v4/
-> Scraped: 4/2/2025, 11:02:57 PM
+> Scraped: 4/2/2025, 11:56:33 PM
 
 tip
 
@@ -471,7 +471,7 @@ Please check our [Troubleshooting guide](_docs_v4_troubleshooting-connection-iss
 #### _docs_v4_broadcasting-events.md
 
 > Source: https://socket.io/docs/v4/broadcasting-events
-> Scraped: 4/2/2025, 11:03:01 PM
+> Scraped: 4/2/2025, 11:56:38 PM
 
 Version: 4.x
 
@@ -536,7 +536,7 @@ In order to target specific clients when broadcasting, please see the documentat
 #### _docs_v4_changelog.md
 
 > Source: https://socket.io/docs/v4/changelog
-> Scraped: 4/2/2025, 11:03:00 PM
+> Scraped: 4/2/2025, 11:56:35 PM
 
 *   [](index.md)
 *   Changelog
@@ -628,7 +628,7 @@ Next
 #### _docs_v4_client-api.md
 
 > Source: https://socket.io/docs/v4/client-api
-> Scraped: 4/2/2025, 11:02:59 PM
+> Scraped: 4/2/2025, 11:56:37 PM
 
 The `io` method is bound to the global scope in the standalone build:
 ```
@@ -1361,7 +1361,7 @@ socket.volatile.emit(/* ... */); // the server may or may not receive it
 #### _docs_v4_client-installation.md
 
 > Source: https://socket.io/docs/v4/client-installation
-> Scraped: 4/2/2025, 11:03:01 PM
+> Scraped: 4/2/2025, 11:56:38 PM
 
 info
 
@@ -1607,7 +1607,7 @@ The `engine.io-client` package brings the engine that is responsible for managin
 #### _docs_v4_client-offline-behavior.md
 
 > Source: https://socket.io/docs/v4/client-offline-behavior
-> Scraped: 4/2/2025, 11:03:01 PM
+> Scraped: 4/2/2025, 11:56:38 PM
 
 *   [](index.md)
 *   Client
@@ -1649,7 +1649,7 @@ Usage with bundlers
 #### _docs_v4_connection-state-recovery.md
 
 > Source: https://socket.io/docs/v4/connection-state-recovery
-> Scraped: 4/2/2025, 11:03:00 PM
+> Scraped: 4/2/2025, 11:56:35 PM
 
 Connection state recovery is a feature which allows restoring a client's state after a temporary disconnection, including any missed packets.
 
@@ -1773,7 +1773,7 @@ MzUPkW0   => the last processed offset
 #### _docs_v4_delivery-guarantees.md
 
 > Source: https://socket.io/docs/v4/delivery-guarantees
-> Scraped: 4/2/2025, 11:03:00 PM
+> Scraped: 4/2/2025, 11:56:36 PM
 
 Socket.IO does guarantee message ordering, no matter which low-level transport is used (even during an upgrade from HTTP long-polling to WebSocket).
 
@@ -1850,7 +1850,7 @@ References:
 #### _docs_v4_emit-cheatsheet.md
 
 > Source: https://socket.io/docs/v4/emit-cheatsheet
-> Scraped: 4/2/2025, 11:03:00 PM
+> Scraped: 4/2/2025, 11:56:36 PM
 
 Version: 4.x
 
@@ -1980,7 +1980,7 @@ socket.timeout(5000).emit("hello", "world", (err, arg1, arg2, arg3) => {
 #### _docs_v4_how-it-works.md
 
 > Source: https://socket.io/docs/v4/how-it-works
-> Scraped: 4/2/2025, 11:03:00 PM
+> Scraped: 4/2/2025, 11:56:36 PM
 
 The bidirectional channel between the Socket.IO server (Node.js) and the Socket.IO client (browser, Node.js, or [another programming language](_docs_v4_.md#what-socketio-is)) is established with a [WebSocket connection](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket) whenever possible, and will use HTTP long-polling as fallback.
 
@@ -2088,7 +2088,7 @@ The source code of the reference implementation (written in TypeScript) can be f
 #### _docs_v4_logging-and-debugging.md
 
 > Source: https://socket.io/docs/v4/logging-and-debugging
-> Scraped: 4/2/2025, 11:03:00 PM
+> Scraped: 4/2/2025, 11:56:37 PM
 
 Socket.IO is now completely instrumented by a minimalistic yet tremendously powerful utility called [debug](https://github.com/visionmedia/debug) by TJ Holowaychuk.
 
@@ -2133,7 +2133,7 @@ are not emitted by the Socket.IO library but by the browser itself, and are ther
 #### _docs_v4_memory-usage.md
 
 > Source: https://socket.io/docs/v4/memory-usage
-> Scraped: 4/2/2025, 11:03:01 PM
+> Scraped: 4/2/2025, 11:56:38 PM
 
 The resources consumed by your Socket.IO server will mainly depend on:
 *   the number of connected clients
@@ -2188,7 +2188,7 @@ Which explains the clean drop in memory usage when the last client disconnects. 
 #### _docs_v4_rooms.md
 
 > Source: https://socket.io/docs/v4/rooms
-> Scraped: 4/2/2025, 11:03:01 PM
+> Scraped: 4/2/2025, 11:56:38 PM
 
 A _room_ is an arbitrary channel that sockets can `join` and `leave`. It can be used to broadcast events to a subset of clients:
 
@@ -2308,7 +2308,7 @@ io.of("/").adapter.on("join-room", (room, id) => {
 #### _docs_v4_server-api.md
 
 > Source: https://socket.io/docs/v4/server-api
-> Scraped: 4/2/2025, 11:02:59 PM
+> Scraped: 4/2/2025, 11:56:36 PM
 
 ![Server in the class diagram for the server](https://socket.io/images/server-class-diagram-server.png)![Server in the class diagram for the server](https://socket.io/images/server-class-diagram-server-dark.png)
 
@@ -4221,7 +4221,7 @@ io.engine.use(helmet());
 #### _docs_v4_server-installation.md
 
 > Source: https://socket.io/docs/v4/server-installation
-> Scraped: 4/2/2025, 11:03:01 PM
+> Scraped: 4/2/2025, 11:56:38 PM
 
 info
 
@@ -4407,7 +4407,7 @@ The `engine.io` package brings the engine that is responsible for managing the l
 #### _docs_v4_testing.md
 
 > Source: https://socket.io/docs/v4/testing
-> Scraped: 4/2/2025, 11:03:01 PM
+> Scraped: 4/2/2025, 11:56:37 PM
 
 ```
 const { createServer } = require("node:http");  
@@ -4432,7 +4432,7 @@ describe("my awesome project", () => {
 #### _docs_v4_troubleshooting-connection-issues.md
 
 > Source: https://socket.io/docs/v4/troubleshooting-connection-issues
-> Scraped: 4/2/2025, 11:03:00 PM
+> Scraped: 4/2/2025, 11:56:36 PM
 
 tip
 
@@ -4872,7 +4872,7 @@ References:
 #### _docs_v4_tutorial_introduction.md
 
 > Source: https://socket.io/docs/v4/tutorial/introduction
-> Scraped: 4/2/2025, 11:02:59 PM
+> Scraped: 4/2/2025, 11:56:36 PM
 
 ## Getting started
 
@@ -4925,7 +4925,7 @@ Ready? Click "Next" to get started.
 #### _docs_v4_typescript.md
 
 > Source: https://socket.io/docs/v4/typescript
-> Scraped: 4/2/2025, 11:03:01 PM
+> Scraped: 4/2/2025, 11:56:37 PM
 
 Starting with v3, Socket.IO now has first class support for [TypeScript](https://www.typescriptlang.org/).
 
