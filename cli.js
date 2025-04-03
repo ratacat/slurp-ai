@@ -1,9 +1,9 @@
 #!/usr/bin/env node --no-warnings
 
+const path = require('path');
 require('dotenv').config();
 const DocumentationScraper = require('./src/DocumentationScraper');
 const { MarkdownCompiler } = require('./src/MarkdownCompiler');
-const path = require('path');
 const fs = require('fs-extra');
 const chalk = require('chalk') || { green: (s) => s, red: (s) => s, yellow: (s) => s, blue: (s) => s, gray: (s) => s };
 
@@ -153,14 +153,19 @@ async function main() {
     // Try to get a meaningful name, with fallbacks
     const outputName = siteName || '';
     const outputFilename = `${outputName}_docs.md`;
+
+    // Use 'compiled' as the standard output directory, configurable via .env
+    const outputDir = process.env.SLURP_OUTPUT_DIR || 'compiled';
+    const finalOutputPath = path.join(outputDir, outputFilename);
+
+    // Ensure the output directory exists
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
     
     // Use 'compiled' as the standard output directory, but allow it to be configurable via .env
-    // Determine output directory from the outputFile path
-    const finalOutputFile = path.resolve(directCompileOptions.outputFile); // Ensure absolute path
-    const outputDir = path.dirname(finalOutputFile);
-    
-    // Ensure output directory exists
-    await fs.ensureDir(path.join(__dirname, outputDir));
+    // Define compile options first
     
     // Extract the input directory name to use as part of the output filename
     // This ensures we maintain the domain name in the output file
@@ -168,14 +173,14 @@ async function main() {
       inputDir: result.outputDir,
       // Force the output filename to be based on the domain name,
       // not relying on env variables which might override it
-      outputFile: path.join(__dirname, outputDir, outputFilename),
+      outputFile: finalOutputPath, // Use the pre-calculated final path
       // Also set output name directly to override any defaults
       outputName: outputName,
       preserveMetadata: process.env.SLURP_PRESERVE_METADATA !== 'false',
       removeNavigation: process.env.SLURP_REMOVE_NAVIGATION !== 'false',
       removeDuplicates: process.env.SLURP_REMOVE_DUPLICATES !== 'false'
     };
-    
+
     try {
       // We've already ensured the output directory exists above
       
