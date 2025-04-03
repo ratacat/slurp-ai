@@ -1,3 +1,7 @@
 node_modules
 test-docs
 .DS_Store
+.env
+compiled/
+slurp_partials/
+docs/
