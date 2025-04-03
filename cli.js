@@ -1,7 +1,8 @@
 #!/usr/bin/env node --no-warnings
 
 const path = require('path');
-require('dotenv').config();
+// Explicitly load .env from the script's directory
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 const DocumentationScraper = require('./src/DocumentationScraper');
 const { MarkdownCompiler } = require('./src/MarkdownCompiler');
 const fs = require('fs-extra');
