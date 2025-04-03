@@ -1,6 +1,6 @@
 # SlurpAI
 
-SlurpAI is a command-line tool that automatically scrapes web-based documentation from a given URL and converts it into a single, clean Markdown file optimized for AI consumption.
+SlurpAI is a command-line tool that automatically scrapes web-based documentation from a given URL and converts it into a single, clean Markdown file optimized for AI consumption. It's designed to be used as a starting point for AI agents to consume documentation via MCP. 
 
 ## Features
 
@@ -9,6 +9,7 @@ SlurpAI is a command-line tool that automatically scrapes web-based documentatio
 - **Content Cleanup**: Attempts to remove common navigation elements and other non-content sections.
 - **Compilation**: Combines content from scraped pages into a single output file.
 - **Configurable**: Options can be set via a `.env` file.
+- **Asynchronous**: Uses async/await for better performance and scalability.
 
 ## Installation
 
@@ -31,19 +32,26 @@ cp .env.example .env
 
 ## Usage
 
-The primary way to use SlurpAI is by providing a starting URL:
+The primary way to use SlurpAI is by providing a starting URL. If you've linked the command globally (using `npm link`), you can use `slurp`:
 
 ```bash
-# Scrape and compile documentation from a URL
+# Scrape and compile documentation using the linked command
+slurp https://example.com/docs/v1/
+```
+
+Alternatively, you can run the script directly using Node.js:
+
+```bash
+# Scrape and compile documentation using Node.js
 node cli.js https://example.com/docs/v1/
 ```
 
 This command will:
-1. Start scraping from the provided URL.
-2. Follow links within the same domain (respecting filtering rules).
-3. Convert the HTML content of scraped pages to Markdown.
+1. Start scraping from the provided URL (e.g., `https://example.com/docs/v1/`).
+2. Follow internal links found on the pages. By default (`SLURP_ENFORCE_BASE_PATH=true`), it will only follow links that share the same base path as the starting URL (e.g., links starting with `https://example.com/docs/v1/`). It also respects other filtering rules defined in the configuration.
+3. Convert the HTML content of scraped pages to Markdown, and remove common navigation elements and other non-content sections.
 4. Save intermediate Markdown files to a temporary directory (default: `slurp_partials/`).
-5. Compile these partial files into a single Markdown file in the output directory (default: `compiled/`). The filename will be based on the domain name (e.g., `example_docs.md`).
+5. Compile these partial files into a single Markdown file in the output directory (default: `slurp_docs/`). The filename will be based on the domain name (e.g., `example_docs.md`).
 
 ## Configuration (Optional)
 
