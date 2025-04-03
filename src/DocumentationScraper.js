@@ -726,8 +726,14 @@ class DocsToMarkdown extends EventEmitter {
             !this.queuedUrls.has(normalizedUrl)) {
           newUrls.push(normalizedUrl);
         }
-      } catch (error) {
-        console.error(`Error processing link ${href}:`, error.message);
+       } catch (error) {
+         if (error instanceof TypeError && error.message.includes('Invalid URL')) {
+           // Log less severe warning for invalid URLs found in source HTML
+           console.warn(`Skipping invalid link found on page: ${href}`);
+         } else {
+           // Log other errors as actual errors
+           console.error(`Error processing link ${href}:`, error.message);
+         }
       }
     });
     
