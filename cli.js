@@ -385,7 +385,7 @@ async function scrapeFromUrl(url, library, version) {
       baseUrl: url,
       outputDir: structuredOutputDir,
       // Use CLI param first, then env var, then default
-      maxPages: parseInt(params.max || process.env.MAX_PAGES_PER_SITE || '20', 10),
+      maxPages: parseInt(params.max || process.env.SLURP_MAX_PAGES_PER_SITE || '20', 10),
       useHeadless: params.headless !== 'false',
       
       // Set library information if provided
@@ -415,7 +415,7 @@ async function scrapeFromUrl(url, library, version) {
       allowedDomains: [urlObj.hostname],
       
       // Async queue options
-      concurrency: parseInt(params.concurrency || 10),
+      concurrency: parseInt(params.concurrency || process.env.SLURP_CONCURRENCY || '10', 10),
       retryCount: parseInt(params['retry-count'] || '3'),
       retryDelay: parseInt(params['retry-delay'] || '1000')
     };
@@ -477,10 +477,8 @@ async function scrapeFromUrl(url, library, version) {
     scraper.on('progress', (data) => {
       if (data.type === 'processing') {
         processed++;
-        // Only log once every 5 documents or for the first one
-        if (processed % 5 === 0 || processed === 1) {
-          process.stdout.write(`\rProcessing documents: ${processed}`);
-        }
+        // Update the count on the same line for every document
+        process.stdout.write(`\rProcessing documents: ${processed}`);
       } else if (data.type === 'failed') {
         failedPages++;
       }
