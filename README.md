@@ -20,6 +20,10 @@ cd slurpai
 # Install dependencies
 npm install
 
+# Link the command for global access (optional)
+npm link
+
+
 # (Optional) Copy and configure environment variables
 # cp .env.example .env
 # Edit .env to customize settings (see Configuration below)
