@@ -157,7 +157,6 @@ async function main() {
 
     // Use 'compiled' as the standard output directory, configurable via .env
     // Use SLURP_COMPILED_DIR for the final output directory, defaulting to 'compiled'
-    // Use SLURP_COMPILED_DIR for the final output directory, defaulting to 'compiled'
     const outputDir = process.env.SLURP_COMPILED_DIR || 'compiled';
     const finalOutputPath = path.join(outputDir, outputFilename);
 
@@ -166,7 +165,6 @@ async function main() {
       fs.mkdirSync(outputDir, { recursive: true });
     }
 
-    
     // Use 'compiled' as the standard output directory, but allow it to be configurable via .env
     // Define compile options first
     
