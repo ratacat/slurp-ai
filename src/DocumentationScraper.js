@@ -4,7 +4,6 @@ const puppeteer = require('puppeteer');
 const TurndownService = require('turndown');
 const fs = require('fs-extra');
 const path = require('path');
-const os = require('os');
 const { URL } = require('url');
 const EventEmitter = require('events');
 const { extract } = require('@extractus/article-extractor');

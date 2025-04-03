@@ -1,6 +1,5 @@
 const fs = require('fs-extra');
 const path = require('path');
-const os = require('os');
 const crypto = require('crypto');
 const yaml = require('js-yaml');
 const { resolvePath } = require('./utils/pathUtils');
