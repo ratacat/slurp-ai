@@ -24,8 +24,8 @@ npm install
 npm link
 
 
-# (Optional) Copy and configure environment variables
-# cp .env.example .env
+# Copy and configure environment variables
+cp .env.example .env
 # Edit .env to customize settings (see Configuration below)
 ```
 
@@ -58,6 +58,17 @@ You can customize SlurpAI's behavior by creating a `.env` file in the project ro
 | `SLURP_USE_HEADLESS`      | `true`          | Whether to use a headless browser (Puppeteer) for JS-rendered content    |
 | `SLURP_ENFORCE_BASE_PATH` | `true`          | Only follow links containing the base path of the starting URL           |
 | `SLURP_REMOVE_DUPLICATES` | `true`          | Attempt to remove duplicate content sections during compilation          |
+## Todo
+
+- Check default values without .env and see what happens. Probably could be better.
+- Allow slurp to accept multiple urls to account and compile different folders if necessary in a single call.
+- Keep a local registry of existing slurps.
+- Build a command for searching for a doc site based on string / version number instead of url.
+- Build command for auto searching all docs listed in package.json
+- Build a command for looking up exact code from an installed NPM package and converting the entire thing to function signatures to compile to a doc.
+- Add to an MCP server.
+
+
 | `SLURP_DELETE_PARTIALS`   | `true`          | Delete the intermediate `SLURP_OUTPUT_DIR` after successful compilation |
 
 *Note: The Brave Search API key mentioned in `.env.example` is **not** required for the direct URL scraping mode.*
