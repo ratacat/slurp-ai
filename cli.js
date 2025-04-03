@@ -1,7 +1,7 @@
 #!/usr/bin/env node --no-warnings
 
 require('dotenv').config();
-const DocsToMarkdown = require('./src/DocsToMarkdown');
+const DocumentationScraper = require('./src/DocumentationScraper');
 const { MarkdownCompiler } = require('./src/MarkdownCompiler');
 const path = require('path');
 const fs = require('fs-extra');
@@ -155,7 +155,9 @@ async function main() {
     const outputFilename = `${outputName}_docs.md`;
     
     // Use 'compiled' as the standard output directory, but allow it to be configurable via .env
-    const outputDir = process.env.SLURP_COMPILED_DIR || 'compiled';
+    // Determine output directory from the outputFile path
+    const finalOutputFile = path.resolve(directCompileOptions.outputFile); // Ensure absolute path
+    const outputDir = path.dirname(finalOutputFile);
     
     // Ensure output directory exists
     await fs.ensureDir(path.join(__dirname, outputDir));
@@ -184,9 +186,19 @@ async function main() {
       const compileResult = await compiler.compile();
       
       // Display minimal results
-      log.info(`Compiled to ${path.basename(compileResult.outputFile)}`);
+      log.info(`Compiled to ${path.relative(process.cwd(), compileResult.outputFile)}`);
+
+      // Cleanup partials if enabled
+      const deletePartials = process.env.SLURP_DELETE_PARTIALS !== 'false'; // Default true
+      if (deletePartials && compileResult.stats.processedFiles > 0) {
+        log.verbose(`Deleting partials directory: ${directCompileOptions.inputDir}`);
+        await fs.remove(directCompileOptions.inputDir);
+        log.verbose(`Partials directory deleted.`);
+      }
+
     } catch (error) {
       log.error(`Error during compilation: ${error.message}`);
+      console.error(error.stack); // Show stack trace for compile errors too
     }
     return;
   }
@@ -243,8 +255,10 @@ async function main() {
       // Parse compile-specific options
       const compileOptions = {
         basePath: params['base-path'],
-        inputDir: params.input,
-        outputFile: params.output,
+        // Default input is now slurp_partials
+        inputDir: params.input || process.env.SLURP_INPUT_DIR, // Let MarkdownCompiler handle default if null
+        // Default output is now slurp_compiled/compiled_docs.md
+        outputFile: params.output, // Pass CLI flag value; let MarkdownCompiler handle default if null/undefined
         preserveMetadata: params['preserve-metadata'] !== 'false',
         removeNavigation: params['remove-navigation'] !== 'false',
         removeDuplicates: params['remove-duplicates'] !== 'false'
@@ -269,7 +283,7 @@ async function main() {
         
         // Display results
         log.success('Compilation complete!');
-        log.info(`Output file: ${result.outputFile}`);
+        log.info(`Output file: ${path.relative(process.cwd(), result.outputFile)}`);
         
         log.summary('Statistics', {
           'Libraries processed': result.stats.totalLibraries,
@@ -288,7 +302,16 @@ async function main() {
           log.info('- All files were filtered out as duplicates');
           log.info('\nCheck your input directory and try again.');
         } else {
-          log.success(`Successfully compiled ${result.stats.processedFiles} files into ${result.outputFile}`);
+          log.success(`Successfully compiled ${result.stats.processedFiles} files into ${path.relative(process.cwd(), result.outputFile)}`);
+
+          // Cleanup partials if enabled
+          const deletePartials = process.env.SLURP_DELETE_PARTIALS !== 'false'; // Default true
+          const finalInputDir = compiler.inputDir; // Get the actual input dir used by compiler
+          if (deletePartials && result.stats.processedFiles > 0) {
+             log.verbose(`Deleting partials directory: ${finalInputDir}`);
+             await fs.remove(finalInputDir);
+             log.verbose(`Partials directory deleted.`);
+          }
         }
       } catch (error) {
         log.error(`Error during compilation: ${error.message}`);
@@ -321,39 +344,6 @@ function isUrl(str) {
 }
 
 /**
- * Get package version from local package.json
- * @param {string} packageName - Name of the package to look for
- * @param {string} packageJsonPath - Path to package.json file (default: './package.json')
- * @returns {Promise<string|null>} Version string or null if not found
- */
-async function getVersionFromPackageJson(packageName, packageJsonPath = './package.json') {
-  try {
-    // Check if package.json exists
-    if (!await fs.pathExists(packageJsonPath)) {
-      return null;
-    }
-    
-    // Read package.json
-    const packageJson = await fs.readJson(packageJsonPath);
-    const dependencies = { 
-      ...packageJson.dependencies, 
-      ...packageJson.devDependencies 
-    };
-    
-    // Check if package exists in dependencies
-    if (dependencies[packageName]) {
-      // Extract actual version from version spec (e.g., "^1.2.3" -> "1.2.3")
-      return dependencies[packageName].replace(/[\^~]/g, '');
-    }
-    
-    return null;
-  } catch (error) {
-    console.error(`Error reading package.json: ${error.message}`);
-    return null;
-  }
-}
-
-/**
  * @param {string} library - Name of the library (optional)
  * @param {string} version - Version of the library (optional)
  * @returns {Object} Result object with success status and outputDir
@@ -373,7 +363,7 @@ async function scrapeFromUrl(url, library, version) {
     const siteName = urlObj.hostname.split('.')[0]; // e.g., "modelcontextprotocol" from "modelcontextprotocol.io"
     
     // Base output directory
-    const baseOutputDir = params.output || path.join(__dirname, 'slurps_docs');
+    const baseOutputDir = params.output || process.env.SLURP_OUTPUT_DIR || path.join(__dirname, 'slurp_partials');
     
     // Create a structured output path that mirrors the URL structure
     let structuredOutputDir = path.join(baseOutputDir, siteName);
@@ -467,7 +457,7 @@ async function scrapeFromUrl(url, library, version) {
       log.verbose(`Note: Could not add to registry: ${regError.message}`);
     }
     
-    const scraper = new DocsToMarkdown(scrapeConfig);
+    const scraper = new DocumentationScraper(scrapeConfig);
     
     // Set up minimal logging
     let processed = 0;
@@ -619,7 +609,7 @@ Legacy Usage (still supported):
   slurp --url <documentation-url> [--library <name>] [--version <version>] [options] # Legacy
 
 Options:
-  --output <dir>           Output directory (default: ./slurps_docs)
+  --output <dir>           Output directory for partial files (default: ./slurp_partials or SLURP_OUTPUT_DIR)
   --max <number>           Maximum pages to scrape (default: 20)
   --headless <boolean>     Use headless browser (default: true)
   --concurrency <number>   Number of concurrent pages (default: 5)
@@ -628,13 +618,13 @@ Options:
   --yes                    Skip confirmation prompts
   
 Compile Options:
-  --input <dir>            Input directory (default: ./slurps_docs)
-  --output <file>          Output file (default: ./compiled_docs.md)
-  --preserve-metadata      Keep metadata in compiled output (default: true)
-  --remove-navigation      Remove navigation elements (default: true)
-  --remove-duplicates      Remove duplicate content (default: true)
-  --exclude <json-array>   JSON array of regex patterns to exclude
-  `); // Removed legacy --package and --package-json flags
+  --input <dir>            Input directory for compiler (default: ./slurp_partials or SLURP_INPUT_DIR)
+  --output <file>          Output file for compiler (default: ./slurp_compiled/compiled_docs.md)
+  --preserve-metadata      Keep metadata in compiled output (default: true or SLURP_PRESERVE_METADATA)
+  --remove-navigation      Remove navigation elements (default: true or SLURP_REMOVE_NAVIGATION)
+  --remove-duplicates      Remove duplicate content (default: true or SLURP_REMOVE_DUPLICATES)
+  --exclude <json-array>   JSON array of regex patterns to exclude (CLI only)
+  `); // Removed BRAVE_*, SLURP_SIMILARITY_THRESHOLD, SLURP_SORT_BY, SLURP_*_LIBRARIES, SLURP_GENERATE_TOC, SLURP_COMPILED_DIR, SLURP_OUTPUT_FILE env vars
 }
 
 // Run the script

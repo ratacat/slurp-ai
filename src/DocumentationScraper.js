@@ -8,7 +8,6 @@ const os = require('os');
 const { URL } = require('url');
 const EventEmitter = require('events');
 const { extract } = require('@extractus/article-extractor');
-require('dotenv').config();
 const { resolvePath } = require('./utils/pathUtils');
 const { cleanupMarkdown: sharedCleanupMarkdown } = require('./utils/markdownUtils');
 // Handle potential default export for p-queue (CommonJS/ESM compatibility)
@@ -31,7 +30,6 @@ class DocsToMarkdown extends EventEmitter {
    * @param {string[]} options.allowedDomains - Domains that are allowed to be scraped (defaults to domain of baseUrl)
    * @param {number} options.maxPages - Maximum number of pages to scrape (0 for unlimited)
    * @param {boolean} options.useHeadless - Whether to use headless browser for JavaScript-rendered content
-   * @param {string} options.contentSelector - CSS selector for the main content area
    * @param {string[]} options.excludeSelectors - CSS selectors to exclude from content
    * @param {number} options.concurrency - Number of pages to process concurrently (default: 5)
    * @param {number} options.retryCount - Number of times to retry failed requests (default: 3)

@@ -12,22 +12,19 @@ class MarkdownCompiler {
   /**
    * Create a new MarkdownCompiler
    * @param {Object} options - Configuration options
-   * @param {string} options.inputDir - Directory containing markdown files (default: slurps_docs)
-   * @param {string} options.outputFile - Output file path (default: compiled_docs.md)
+   * @param {string} options.inputDir - Directory containing markdown files (default: slurp_partials)
+   * @param {string} options.outputFile - Output file path (default: slurp_compiled/compiled_docs.md)
    * @param {boolean} options.preserveMetadata - Whether to preserve metadata from frontmatter (default: true)
    * @param {boolean} options.removeNavigation - Whether to remove navigation links (default: true)
    * @param {boolean} options.removeDuplicates - Whether to remove duplicate content sections (default: true)
-   * @param {string} options.sortBy - How to sort files ('date', 'name', or null for no sorting) (default: null)
-   * @param {string} options.sortBy - How to sort files ('date', 'name', or null for no sorting) (default: null)
-   * @param {string[]} options.includeLibraries - Array of library names to include (default: all)
-   * @param {string[]} options.excludeLibraries - Array of library names to exclude (default: none)
-   * @param {boolean} options.generateToc - Whether to generate a table of contents (default: false)
    * @param {RegExp[]} options.excludePatterns - Array of regex patterns to exclude (default: common patterns)
    */
   constructor(options = {}) {
     this.basePath = options.basePath || process.env.SLURP_BASE_PATH || process.cwd();
-    this.inputDir = resolvePath(options.inputDir || process.env.SLURP_INPUT_DIR || 'slurps', this.basePath);
-    this.outputFile = resolvePath(options.outputFile || 'compiled.md', this.basePath);
+    // Default input dir is slurp_partials
+    this.inputDir = resolvePath(options.inputDir || process.env.SLURP_INPUT_DIR || 'slurp_partials', this.basePath);
+    // Default output file is slurp_compiled/compiled_docs.md
+    this.outputFile = resolvePath(options.outputFile || process.env.SLURP_OUTPUT_FILE || path.join('slurp_compiled', 'compiled_docs.md'), this.basePath);
     
     this.preserveMetadata = options.preserveMetadata !== undefined ?
       options.preserveMetadata :
@@ -42,16 +39,6 @@ class MarkdownCompiler {
       (process.env.SLURP_REMOVE_DUPLICATES !== 'false');
       
       
-    this.sortBy = options.sortBy || process.env.SLURP_SORT_BY || null;
-    this.includeLibraries = options.includeLibraries || 
-      (process.env.SLURP_INCLUDE_LIBRARIES ? process.env.SLURP_INCLUDE_LIBRARIES.split(',') : null);
-      
-    this.excludeLibraries = options.excludeLibraries || 
-      (process.env.SLURP_EXCLUDE_LIBRARIES ? process.env.SLURP_EXCLUDE_LIBRARIES.split(',') : []);
-      
-    this.generateToc = options.generateToc !== undefined ?
-      options.generateToc :
-      (process.env.SLURP_GENERATE_TOC === 'true');
     
     this.excludePatterns = options.excludePatterns || [
       /(?:^|\n)(?:#{1,6}\s*)?(?:\bOn this page\b|\bTable of contents\b|\bNavigation\b|\bContents\b)[\s\S]*?(?=\n#{1,6}\s|\n$)/gi,
