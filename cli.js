@@ -155,7 +155,9 @@ async function main() {
     const outputFilename = `${outputName}_docs.md`;
 
     // Use 'compiled' as the standard output directory, configurable via .env
-    const outputDir = process.env.SLURP_OUTPUT_DIR || 'compiled';
+    // Use SLURP_COMPILED_DIR for the final output directory, defaulting to 'compiled'
+    // Use SLURP_COMPILED_DIR for the final output directory, defaulting to 'compiled'
+    const outputDir = process.env.SLURP_COMPILED_DIR || 'compiled';
     const finalOutputPath = path.join(outputDir, outputFilename);
 
     // Ensure the output directory exists
@@ -261,7 +263,7 @@ async function main() {
       const compileOptions = {
         basePath: params['base-path'],
         // Default input is now slurp_partials
-        inputDir: params.input || process.env.SLURP_INPUT_DIR, // Let MarkdownCompiler handle default if null
+        inputDir: params.input || process.env.SLURP_PARTIALS_DIR, // Let MarkdownCompiler handle default if null
         // Default output is now slurp_compiled/compiled_docs.md
         outputFile: params.output, // Pass CLI flag value; let MarkdownCompiler handle default if null/undefined
         preserveMetadata: params['preserve-metadata'] !== 'false',
@@ -368,7 +370,7 @@ async function scrapeFromUrl(url, library, version) {
     const siteName = urlObj.hostname.split('.')[0]; // e.g., "modelcontextprotocol" from "modelcontextprotocol.io"
     
     // Base output directory
-    const baseOutputDir = params.output || process.env.SLURP_OUTPUT_DIR || path.join(__dirname, 'slurp_partials');
+    const baseOutputDir = params.output || process.env.SLURP_PARTIALS_DIR || path.join(__dirname, 'slurp_partials');
     
     // Create a structured output path that mirrors the URL structure
     let structuredOutputDir = path.join(baseOutputDir, siteName);

@@ -24,7 +24,6 @@ npm install
 # Link the command for global access (optional)
 npm link
 
-
 # Copy and configure environment variables
 cp .env.example .env
 # Edit .env to customize settings (see Configuration below)
@@ -50,6 +49,8 @@ This command will:
 1. Start scraping from the provided URL (e.g., `https://example.com/docs/v1/`).
 2. Follow internal links found on the pages. By default (`SLURP_ENFORCE_BASE_PATH=true`), it will only follow links that share the same base path as the starting URL (e.g., links starting with `https://example.com/docs/v1/`). It also respects other filtering rules defined in the configuration.
 3. Convert the HTML content of scraped pages to Markdown, and remove common navigation elements and other non-content sections.
+| `SLURP_COMPILED_DIR`      | `compiled`      | Directory for the final compiled markdown file                           |
+
 4. Save intermediate Markdown files to a temporary directory (default: `slurp_partials/`).
 5. Compile these partial files into a single Markdown file in the output directory (default: `slurp_docs/`). The filename will be based on the domain name (e.g., `example_docs.md`).
 
@@ -59,7 +60,7 @@ You can customize SlurpAI's behavior by creating a `.env` file in the project ro
 
 | Variable                  | Default         | Description                                                              |
 | ------------------------- | --------------- | ------------------------------------------------------------------------ |
-| `SLURP_OUTPUT_DIR`        | `slurp_partials`| Directory for intermediate scraped markdown files                        |
+| `SLURP_PARTIALS_DIR`      | `slurp_partials`| Directory for intermediate scraped markdown files (used as input for compile) |
 | `SLURP_COMPILED_DIR`      | `compiled`      | Directory for the final compiled markdown file                           |
 | `SLURP_MAX_PAGES_PER_SITE`| `20`            | Maximum pages to scrape per site (0 for unlimited)                       |
 | `SLURP_CONCURRENCY`       | `10`            | Number of pages to process concurrently                                  |

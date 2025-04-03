@@ -39,7 +39,7 @@ class DocsToMarkdown extends EventEmitter {
     super();
     this.baseUrl = options.baseUrl;
     this.basePath = options.basePath || process.env.SLURP_BASE_PATH || process.cwd();
-    this.outputDir = resolvePath(options.outputDir || process.env.SLURP_OUTPUT_DIR || 'docs', this.basePath);
+    this.outputDir = resolvePath(options.outputDir || process.env.SLURP_PARTIALS_DIR || 'slurp_partials', this.basePath);
     this.libraryInfo = options.libraryInfo || {};
     this.visitedUrls = new Set();
     this.queuedUrls = new Set();
