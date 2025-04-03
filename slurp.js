@@ -1,9 +1,7 @@
 #!/usr/bin/env node --no-warnings
 
 require('dotenv').config();
-const LocalRegistryLookup = require('./src/LocalRegistryLookup');
 const DocsToMarkdown = require('./src/DocsToMarkdown');
-const DocSlurper = require('./src/DocSlurper');
 const { MarkdownCompiler } = require('./src/MarkdownCompiler');
 const path = require('path');
 const fs = require('fs-extra');
@@ -25,7 +23,7 @@ const verbose = process.env.SLURP_VERBOSE === 'true' || false;
 // Parse remaining command line arguments for flags/options
 let i = 1;
 // Skip the package name and optional version for commands that use them
-if (['read', 'fetch', 'purge'].includes(command)) {
+if (['read', 'fetch'].includes(command)) { // Removed 'purge'
   // Skip package name
   if (i < args.length && !args[i].startsWith('--')) {
     i++;
@@ -116,7 +114,7 @@ async function main() {
         originalConsoleLog.apply(console, arguments);
       }
     };
-    console.error = function() {};
+    console.error = function() { originalConsoleError.apply(console, arguments); };
     console.warn = function() {};
     
     // Also suppress process warnings
@@ -231,88 +229,11 @@ async function main() {
         // Use direct URL scraping
         await scrapeFromUrl(fetchArg, null, fetchVersion);
       } else {
-        // Use existing package documentation scraper
-        await scrapePackageDocumentation(fetchArg, fetchVersion);
+        // Package name provided, but package fetching via DocSlurper is removed.
+        log.error('Fetching documentation by package name is disabled.');
+        log.info('Please provide a direct URL using `slurp <url>` or `slurp fetch <url>`.');
+        log.info('Please provide a direct URL instead: slurp <url>');
       }
-      break;
-      
-    case 'list':
-      // List locally available documentation: slurp list
-      log.info('Listing locally available documentation');
-      
-      // Use path for docs directory
-      const docsDir = params.output || path.join(__dirname, 'slurps_docs');
-      
-      try {
-        // Check if docs directory exists
-        if (!await fs.pathExists(docsDir)) {
-          log.error(`No documentation directory found at: ${docsDir}`);
-          log.info('Run "slurp fetch <package>" to download documentation first.');
-          return;
-        }
-        
-        // Read the docs directory structure
-        const packages = await fs.readdir(docsDir);
-        
-        if (packages.length === 0) {
-          log.error('No documentation available yet.');
-          log.info('Run "slurp fetch <package>" to download documentation first.');
-          return;
-        }
-        
-        log.info(`\nFound documentation for ${packages.length} packages:`);
-        log.info('\n| Package | Versions | Last Updated |');
-        log.info('|---------|----------|--------------|');
-        
-        // List all packages and their versions
-        for (const pkg of packages) {
-          const pkgPath = path.join(docsDir, pkg);
-          const stats = await fs.stat(pkgPath);
-          
-          // Skip if not a directory
-          if (!stats.isDirectory()) continue;
-          
-          // Get available versions
-          const versions = await fs.readdir(pkgPath);
-          const versionStr = versions.join(', ');
-          
-          // Get the most recent update time across all version directories
-          let latestTime = new Date(0);
-          for (const version of versions) {
-            const versionPath = path.join(pkgPath, version);
-            const versionStats = await fs.stat(versionPath);
-            if (versionStats.mtime > latestTime) {
-              latestTime = versionStats.mtime;
-            }
-          }
-          
-          // Format the last updated time
-          const lastUpdated = latestTime.toISOString().split('T')[0];
-          
-          log.info(`| ${pkg} | ${versionStr} | ${lastUpdated} |`);
-        }
-        
-        log.info('\nUse "slurp read <package> <version>" to read documentation.');
-      } catch (error) {
-        log.error(`Error listing documentation: ${error.message}`);
-      }
-      break;
-      
-    case 'check':
-      // Check all dependencies in package.json: slurp check [package.json path]
-      const packageJsonPath = args[1] || './package.json'; // Default to local package.json
-      
-      // Use existing package.json analyzer
-      await scrapeFromPackageJson(packageJsonPath);
-      break;
-      
-    case 'purge':
-      // Remove documentation from cache: slurp purge [package] [version]
-      const purgePackage = args[1];
-      const purgeVersion = args[2]; // Optional
-      
-      // Use purge documentation function
-      await purgeDocumentation(purgePackage, purgeVersion);
       break;
       
     case 'compile':
@@ -376,17 +297,10 @@ async function main() {
       
     // Legacy support for original parameter style
     default:
-      if (params.package) {
-        // Package-based operation
-        await scrapePackageDocumentation(params.package, params.version);
-      } else if (params.url) {
-        // URL-based operation
+      // Handle legacy --url flag
+      if (params.url) {
         await scrapeFromUrl(params.url, params.library, params.version);
-      } else if (params['package-json']) {
-        // Project analysis operation
-        await scrapeFromPackageJson(params['package-json']);
-      } else {
-        // Display help
+      } else { // If no recognized command or legacy flag, show help
         showHelp();
       }
   }
@@ -436,235 +350,6 @@ async function getVersionFromPackageJson(packageName, packageJsonPath = './packa
   } catch (error) {
     console.error(`Error reading package.json: ${error.message}`);
     return null;
-  }
-}
-
-/**
- * Purge documentation from the cache
- * @param {string} packageName - Name of the package to purge (optional)
- * @param {string} version - Version of the package to purge (optional)
- */
-async function purgeDocumentation(packageName, version) {
-  const docsDir = params.output || path.join(__dirname, 'slurps_docs');
-  const registryPath = path.join(__dirname, 'data/doc_sites.json');
-  
-  try {
-    // Check if docs directory exists
-    if (!await fs.pathExists(docsDir)) {
-      log.error('No documentation directory found.');
-      return;
-    }
-    
-    // If no package specified, purge all
-    if (!packageName) {
-      log.info('Purging all documentation...');
-      await fs.emptyDir(docsDir);
-      
-      // Also delete the registry file if it exists
-      if (await fs.pathExists(registryPath)) {
-        log.verbose('Deleting documentation registry...');
-        await fs.remove(registryPath);
-      }
-      
-      log.success('All documentation and registry purged successfully.');
-      return;
-    }
-    
-    // Check if package directory exists
-    const packageDir = path.join(docsDir, packageName);
-    if (!await fs.pathExists(packageDir)) {
-      log.error(`No documentation found for ${packageName}.`);
-      return;
-    }
-    
-    // If no version specified, purge all versions of the package
-    if (!version) {
-      log.info(`Purging all documentation for ${packageName}...`);
-      await fs.remove(packageDir);
-      
-      // Update the registry file if it exists
-      if (await fs.pathExists(registryPath)) {
-        try {
-          const registryData = await fs.readJson(registryPath);
-          if (registryData.docSites) {
-            // Filter out the purged package
-            registryData.docSites = registryData.docSites.filter(site => 
-              site.name.toLowerCase() !== packageName.toLowerCase());
-            await fs.writeJson(registryPath, registryData, { spaces: 2 });
-            log.verbose(`Updated documentation registry.`);
-          }
-        } catch (regError) {
-          log.verbose(`Note: Could not update registry: ${regError.message}`);
-        }
-      }
-      
-      log.success(`Documentation for ${packageName} purged successfully.`);
-      return;
-    }
-    
-    // Check if version directory exists
-    const versionDir = path.join(packageDir, version);
-    if (!await fs.pathExists(versionDir)) {
-      log.error(`No documentation found for ${packageName}@${version}.`);
-      return;
-    }
-    
-    // Purge specific version
-    log.info(`Purging documentation for ${packageName}@${version}...`);
-    await fs.remove(versionDir);
-    
-    // Check if there are any other versions left
-    const remainingVersions = await fs.readdir(packageDir);
-    if (remainingVersions.length === 0) {
-      // If no versions left, remove the package directory and update registry
-      await fs.remove(packageDir);
-      
-      // Update the registry file if it exists
-      if (await fs.pathExists(registryPath)) {
-        try {
-          const registryData = await fs.readJson(registryPath);
-          if (registryData.docSites) {
-            // Filter out the purged package
-            registryData.docSites = registryData.docSites.filter(site => 
-              site.name.toLowerCase() !== packageName.toLowerCase());
-            await fs.writeJson(registryPath, registryData, { spaces: 2 });
-            log.verbose(`Updated documentation registry.`);
-          }
-        } catch (regError) {
-          log.verbose(`Note: Could not update registry: ${regError.message}`);
-        }
-      }
-    }
-    
-    log.success(`Documentation for ${packageName}@${version} purged successfully.`);
-    
-  } catch (error) {
-    log.error(`Error purging documentation: ${error.message}`);
-  }
-}
-
-/**
- * Scrape documentation for a specific package and version
- * @param {string} packageName - Name of the package
- * @param {string} version - Version of the package (optional)
- */
-async function scrapePackageDocumentation(packageName, version) {
-  log.info(`Finding documentation for ${packageName}${version ? `@${version}` : ''}...`);
-  
-  try {
-    // If no version is provided, try to get it from package.json
-    if (!version) {
-      const packageJsonVersion = await getVersionFromPackageJson(packageName);
-      if (packageJsonVersion) {
-        log.verbose(`Found version ${packageJsonVersion} in package.json`);
-        version = packageJsonVersion;
-      }
-    }
-    
-    // Find documentation URL
-    const registryLookup = new LocalRegistryLookup();
-    const docInfo = await registryLookup.findVersionDocUrl(packageName, version);
-    
-    if (!docInfo.found) {
-      log.error(docInfo.message);
-      return;
-    }
-    
-    log.success(`${docInfo.message} (${docInfo.exactMatch ? 'Exact match' : 'Approximate match'})`);
-    log.verbose(`URL: ${docInfo.url}`);
-    
-    // Ask for confirmation to start scraping
-    if (!params.yes) {
-      log.info('\nDo you want to scrape this documentation? (Y/n)');
-      const answer = await waitForInput();
-      
-      if (answer && answer.toLowerCase() !== 'y') {
-        log.info('Scraping canceled.');
-        return;
-      }
-    }
-    
-    // Scrape the documentation
-    log.info(`Starting documentation scraping for ${packageName}...`);
-    
-      // Configure the scraper
-      const scrapeConfig = {
-        baseUrl: docInfo.url,
-        outputDir: params.output || path.join(__dirname, 'slurps_docs'),
-        // Use CLI param first, then env var, then default to 20
-        // CLI: --max parameter
-        // ENV: MAX_PAGES_PER_SITE from .env
-        maxPages: parseInt(params.max || process.env.MAX_PAGES_PER_SITE || '20', 10),
-        useHeadless: params.headless !== 'false',
-      
-      // Set library information
-      libraryInfo: {
-        library: packageName,
-        version: version || docInfo.packageInfo.latestVersion,
-        exactVersionMatch: docInfo.exactMatch
-      },
-      
-      // Default content selectors (can be improved with site-specific selectors)
-      contentSelector: 'main, .content, .document, article, .documentation, .main-content',
-      excludeSelectors: [
-        'nav',
-        '.navigation',
-        '.sidebar',
-        '.menu',
-        '.toc',
-        'footer',
-        '.footer',
-        'script',
-        'style',
-        '.headerlink'
-      ],
-      
-      // Domain restrictions
-      allowedDomains: [new URL(docInfo.url).hostname],
-      
-      // Async queue options
-      concurrency: parseInt(params.concurrency ||  10),
-      retryCount: parseInt(params['retry-count'] || '3'),
-      retryDelay: parseInt(params['retry-delay'] || '1000')
-    };
-    
-    const scraper = new DocsToMarkdown(scrapeConfig);
-    
-    // Configure scraper to use our logging system
-    scraper.on('init', (data) => {
-      log.verbose(`Initialized scraper for ${packageName}, max pages: ${data.maxPages}`);
-    });
-    
-    scraper.on('progress', (data) => {
-      if (data.type === 'processing') {
-        // Only log occasionally to reduce noise
-        if (data.processed % 10 === 0 || data.processed === 1) {
-          log.progress(`Processing page ${data.processed}/${data.maxPages || 'unlimited'} (Queue: ${data.queueSize})`, data.processed === 1);
-        }
-      } else if (data.type === 'saved') {
-        // Only log major milestones
-        if (data.progress % 25 === 0 || data.progress >= 95) {
-          log.progress(`Saving progress: ${Math.floor(data.progress)}%`);
-        }
-      }
-    });
-    
-    scraper.on('complete', (stats) => {
-      log.summary('Scraping Stats', {
-        'Pages processed': stats.processed,
-        'Failed pages': stats.failed,
-        'Duration': `${stats.duration.toFixed(1)}s`,
-        'Pages per second': stats.pagesPerSecond
-      });
-    });
-    
-    await scraper.start();
-    
-    log.success('Documentation scraping completed successfully!');
-    log.info(`Markdown files have been saved to: ${path.join(scrapeConfig.outputDir, packageName, version || docInfo.packageInfo.latestVersion)}`);
-    
-  } catch (error) {
-    log.error(`Error: ${error.message}`);
   }
 }
 
@@ -832,6 +517,7 @@ async function scrapeFromUrl(url, library, version) {
     
   } catch (error) {
     log.error(`Error: ${error.message}`);
+    console.error(error.stack); // Always show stack trace for debugging
     // Return failure information
     return {
       success: false
@@ -881,180 +567,6 @@ function extractNameFromUrl(url) {
 }
 
 /**
- * Analyze package.json and scrape documentation for dependencies
- * @param {string} packageJsonPath - Path to package.json file
- */
-async function scrapeFromPackageJson(packageJsonPath) {
-  log.info(`Analyzing dependencies in ${packageJsonPath}...`);
-  
-  try {
-    // Normalize the path
-    const normalizedPath = path.resolve(packageJsonPath);
-    
-    // Check if the file exists
-    if (!await fs.pathExists(normalizedPath)) {
-      log.error(`File not found: ${normalizedPath}`);
-      return;
-    }
-    
-    // Analyze dependencies
-    const registryLookup = new LocalRegistryLookup();
-    const dependencies = await registryLookup.analyzeDependencies(normalizedPath);
-    
-    log.info(`Found ${dependencies.length} dependencies in ${packageJsonPath}`);
-    
-    // Display dependencies in a simple format
-    log.info('\nDependency Analysis:');
-    log.info('-------------------');
-    
-    // Filter to found dependencies
-    const foundDeps = dependencies.filter(dep => dep.found);
-    
-    // Display summary
-    for (const dep of dependencies) {
-      const status = dep.found ? '✅' : '❌';
-      const confidence = dep.exactMatch ? 'EXACT' : (dep.found ? 'CLOSE' : 'N/A');
-      log.info(`${status} ${dep.package}@${dep.version} - ${dep.found ? 'Documentation available' : 'No documentation found'} (${confidence})`);
-    }
-    
-    log.info(`\nSummary: Found documentation for ${foundDeps.length} out of ${dependencies.length} dependencies.`);
-    
-    if (foundDeps.length === 0) {
-      log.error('No documentation found for any dependencies.');
-      return;
-    }
-    
-    // Determine which dependencies to scrape
-    let packagesToScrape = [];
-    
-    if (params.yes) {
-      // Auto-scrape all dependencies with --yes flag
-      packagesToScrape = foundDeps;
-      log.info(`Auto-scraping documentation for ${packagesToScrape.length} packages...`);
-    } else {
-      // Ask which dependencies to scrape
-      log.info('\nDo you want to scrape documentation for these packages? (all/none/comma-separated list)');
-      const answer = await waitForInput();
-      
-      if (!answer || answer.toLowerCase() === 'none') {
-        log.info('Scraping canceled.');
-        return;
-      }
-      
-      if (answer.toLowerCase() === 'all') {
-        packagesToScrape = foundDeps;
-      } else {
-        // Parse comma-separated list
-        const packageNames = answer.split(',').map(name => name.trim());
-        packagesToScrape = foundDeps.filter(dep => packageNames.includes(dep.package));
-      }
-      
-      log.info(`Scraping documentation for ${packagesToScrape.length} packages...`);
-    }
-    
-    // Scrape selected dependencies
-    let downloadedCount = 0;
-    const startTime = Date.now();
-    
-    for (const dep of packagesToScrape) {
-      log.info(`\n[${dep.package}] Fetching documentation...`);
-      
-      try {
-        // Find documentation URL
-        const docInfo = await registryLookup.findVersionDocUrl(dep.package, dep.version);
-        
-        if (!docInfo.found) {
-          log.error(`[${dep.package}] Failed: No documentation found`);
-          continue;
-        }
-        
-        // Display info
-        const confidence = docInfo.exactMatch ? 'EXACT' : 'CLOSE';
-        const docVersion = docInfo.packageInfo?.latestVersion || dep.version;
-        
-        log.verbose(`[${dep.package}] Found documentation at: ${docInfo.url}`);
-        log.verbose(`[${dep.package}] Version match: ${confidence}, Doc version: ${docVersion}`);
-        log.info(`[${dep.package}] Downloading...`);
-        
-        // Configure the scraper
-        const scrapeConfig = {
-          baseUrl: docInfo.url,
-          outputDir: params.output || path.join(__dirname, 'slurps_docs'),
-          // Use CLI param first, then env var, then default
-          maxPages: parseInt(params.max || process.env.MAX_PAGES_PER_SITE || '20', 10),
-          useHeadless: params.headless !== 'false',
-          
-          // Set library information
-          libraryInfo: {
-            library: dep.package,
-            version: dep.version || docInfo.packageInfo?.latestVersion,
-            exactVersionMatch: docInfo.exactMatch
-          },
-          
-          // Default content selectors
-          contentSelector: 'main, .content, .document, article, .documentation, .main-content',
-          excludeSelectors: [
-            'nav', '.navigation', '.sidebar', '.menu', '.toc', 
-            'footer', '.footer', 'script', 'style', '.headerlink'
-          ],
-          
-          // Domain restrictions
-          allowedDomains: [new URL(docInfo.url).hostname],
-          
-          // Async queue options
-          concurrency: parseInt(params.concurrency || 10),
-          retryCount: parseInt(params['retry-count'] || '3'),
-          retryDelay: parseInt(params['retry-delay'] || '1000')
-        };
-        
-        const scraper = new DocsToMarkdown(scrapeConfig);
-        
-        // Listen for progress events
-        scraper.on('init', (data) => {
-          log.verbose(`[${dep.package}] Initialized scraper, max pages: ${data.maxPages}`);
-        });
-        
-        scraper.on('progress', (data) => {
-          if (data.type === 'processing') {
-            // Only log occasionally to reduce noise
-            if (data.processed % 10 === 0 || data.processed === 1) {
-              log.progress(`[${dep.package}] Processing page ${data.processed}/${data.maxPages || 'unlimited'}`, data.processed === 1);
-            }
-          } else if (data.type === 'saved') {
-            // Only log major milestones
-            if (data.progress % 25 === 0 || data.progress >= 95) {
-              log.progress(`[${dep.package}] Saving progress: ${Math.floor(data.progress)}%`);
-            }
-          }
-        });
-        
-        scraper.on('complete', (stats) => {
-          downloadedCount++;
-          log.success(`[${dep.package}] Downloaded ${stats.processed} pages in ${stats.duration.toFixed(1)}s`);
-        });
-        
-        // Start scraping
-        await scraper.start();
-        
-      } catch (error) {
-        log.error(`[${dep.package}] Failed: ${error.message}`);
-      }
-    }
-    
-    // Display final summary
-    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-    log.success(`Documentation check completed in ${duration}s`);
-    log.summary('Results', {
-      'Found': `${foundDeps.length}/${dependencies.length} packages`,
-      'Downloaded': `${downloadedCount} package(s)`,
-      'Duration': `${duration}s`
-    });
-  } catch (error) {
-    log.error(`Error: ${error.message}`);
-  }
-}
-
-/**
  * Wait for user input
  * @returns {Promise<string>} User input
  */
@@ -1083,11 +595,8 @@ Usage:
 Commands:
   <url>                         Fetch and compile documentation in one step
   read <package> [version]      Read local documentation
-  fetch <package|url> [version] Find and download documentation
-  list                          List locally available documentation
-  check [package.json path]     Check all dependencies in package.json
-  purge [package] [version]     Remove documentation from cache
-  compile [options]             Compile documentation into a single file
+  fetch <url> [version]         Download documentation from a URL
+  compile [options]             Compile downloaded documentation into a single file
 
 Examples:
   Direct URL mode (fetch and compile):
@@ -1096,28 +605,18 @@ Examples:
   Read local documentation:
     slurp read express 4.18.2
 
-  Find and download documentation (package):
-    slurp fetch react 18.2.0
 
   Find and download documentation (URL):
     slurp fetch https://modelcontextprotocol.io/introduction
 
-  List available documentation:
-    slurp list
 
-  Check dependencies:
-    slurp check ./package.json
-
-  Purge documentation:
     slurp purge express 4.18.2
     
   Compile documentation:
     slurp compile --input ./slurps_docs --output ./compiled_docs.md
 
 Legacy Usage (still supported):
-  slurp --package <package-name> [--version <version>] [options]
-  slurp --url <documentation-url> [--library <name>] [--version <version>] [options]
-  slurp --package-json <path-to-package.json> [options]
+  slurp --url <documentation-url> [--library <name>] [--version <version>] [options] # Legacy
 
 Options:
   --output <dir>           Output directory (default: ./slurps_docs)
@@ -1135,7 +634,7 @@ Compile Options:
   --remove-navigation      Remove navigation elements (default: true)
   --remove-duplicates      Remove duplicate content (default: true)
   --exclude <json-array>   JSON array of regex patterns to exclude
-  `);
+  `); // Removed legacy --package and --package-json flags
 }
 
 // Run the script

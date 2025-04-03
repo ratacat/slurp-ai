@@ -54,8 +54,14 @@ SlurpAI uses the Brave Search API for documentation discovery. You'll need to:
 ### CLI Interface
 
 ```bash
+# Direct URL mode - fetch and compile in one step
+node slurp.js https://expressjs.com/en/4.18/
+
 # Find and download documentation for a package
 node slurp.js fetch express 4.18.2
+
+# Find and download documentation from a URL
+node slurp.js fetch https://expressjs.com/en/4.18/
 
 # Read local documentation for a package
 node slurp.js read express 4.18.2
@@ -181,6 +187,21 @@ The scraper automatically filters out URLs containing patterns that typically le
 - E-commerce/marketing: `/store/`, `/pricing/`, `/subscribe/`, etc.
 - User account related: `/login/`, `/account/`, `/profile/`, etc.
 - Support/feedback: `/support/`, `/help-center/`, `/faq/`, etc.
+
+### Direct URL Mode
+
+SlurpAI now supports a simplified "direct URL mode" that combines fetching and compiling in a single step:
+
+```bash
+# Scrape and compile documentation from a URL in one command
+node slurp.js https://expressjs.com/en/4.18/
+```
+
+This mode:
+- Automatically extracts a meaningful name from the URL for the output file
+- Scrapes the documentation with intelligent URL filtering
+- Compiles all scraped content into a single markdown file
+- Outputs the result to the `compiled/` directory
 
 You can customize this list:
 

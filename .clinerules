@@ -5,8 +5,33 @@
    - Defines core requirements and goals
    - Source of truth for project scope
 
+### Command Patterns
 
-### Usage
+#### Direct URL Mode
+```bash
+# Scrape and compile documentation from a URL in one step
+node slurp.js https://expressjs.com/en/4.18/
+```
+
+#### Package Documentation
+```bash
+# Find and download documentation for a package
+node slurp.js fetch express 4.18.2
+
+# Read local documentation for a package
+node slurp.js read express 4.18.2
+
+# List all locally available documentation
+node slurp.js list
+
+# Check all dependencies in a package.json file
+node slurp.js check ./package.json
+
+# Remove documentation from cache
+node slurp.js purge express 4.18.2
+```
+
+#### Compilation
 ```bash
 # Basic usage with default options
 node compile.js
@@ -56,5 +81,25 @@ flowchart TD
 - Use replace_in_file with careful targeting for config updates
 - When in doubt, ask the user before modifying configuration files
 - Only run git commands if explicitly asked to do so
+
+## URL Filtering Best Practices
+
+When working with the documentation scraper, follow these guidelines for optimal results:
+
+- **Base Path Enforcement**: Always enable `enforceBasePath` to keep scraping within relevant documentation sections
+- **URL Blacklist**: Use the default blacklist patterns and add custom ones for specific sites as needed
+- **Query Parameters**: Only preserve meaningful parameters that affect content (version, language, etc.)
+- **File Extensions**: Avoid scraping non-documentation file types (.pdf, .zip, etc.)
+- **Pagination Handling**: Be aware that pagination parameters can lead to duplicate content
+
+## Documentation Compilation Guidelines
+
+When compiling documentation:
+
+- **Duplicate Detection**: Enable `removeDuplicates` to eliminate redundant content
+- **Navigation Removal**: Use `removeNavigation` to clean up non-content elements
+- **Metadata Preservation**: Keep metadata when it provides valuable context
+- **Custom Exclude Patterns**: Add patterns for site-specific elements that should be removed
+- **Output Organization**: Use meaningful filenames based on the documentation source
 
 The format is flexible - focus on capturing valuable insights that help me work more effectively with you and the project. Think of .clinerules as a living document that grows smarter as we work together.
