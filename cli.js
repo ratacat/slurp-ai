@@ -98,65 +98,65 @@ async function main() {
     // Set a special flag for direct URL mode to control output
     const directUrlMode = true;
     
-    // Suppress all output initially
-    const originalConsoleLog = console.log;
-    const originalConsoleError = console.error;
-    const originalConsoleWarn = console.warn;
-    
-    // Override console methods to hide warnings and verbose output
-    console.log = function() {
-      // Only log if it's an error or specific important messages
-      if (arguments[0] && typeof arguments[0] === 'string' &&
-          (arguments[0].includes('Error') || arguments[0].includes('Failed'))) {
-        // In direct URL mode, don't automatically show "Failed: 0 pages"
-        if (directUrlMode && arguments[0].includes('Failed: 0 pages')) {
-          return; // Skip this message in direct URL mode
+    // Conditionally suppress output based on SLURP_DEBUG
+    let originalConsoleLog, originalConsoleError, originalConsoleWarn;
+    if (process.env.SLURP_DEBUG !== 'true') {
+      // Suppress all output initially
+      originalConsoleLog = console.log;
+      originalConsoleError = console.error;
+      originalConsoleWarn = console.warn;
+      
+      // Override console methods to hide warnings and verbose output
+      console.log = function() {
+        // Only log if it's an error or specific important messages
+        if (arguments[0] && typeof arguments[0] === 'string' &&
+            (arguments[0].includes('Error') || arguments[0].includes('Failed'))) {
+          // In direct URL mode, don't automatically show "Failed: 0 pages"
+          if (directUrlMode && arguments[0].includes('Failed: 0 pages')) {
+            return; // Skip this message in direct URL mode
+          }
+          originalConsoleLog.apply(console, arguments);
         }
-        originalConsoleLog.apply(console, arguments);
-      }
-    };
-    console.error = function() { originalConsoleError.apply(console, arguments); };
-    console.warn = function() {};
+      };
+      console.error = function() { originalConsoleError.apply(console, arguments); };
+      console.warn = function() {};
+      
+      // Also suppress process warnings
+      process.env.NODE_NO_WARNINGS = '1';
+    }
     
-    // Also suppress process warnings
-    process.env.NODE_NO_WARNINGS = '1';
-    
+    // Call scrapeFromUrl and wait for it to complete (or time out internally)
     const result = await scrapeFromUrl(url, null, null);
     
-    // Restore original console methods
-    console.log = originalConsoleLog;
-    console.error = originalConsoleError;
-    console.warn = originalConsoleWarn;
+    // Restore console methods only if they were overridden
+    if (process.env.SLURP_DEBUG !== 'true' && originalConsoleLog) {
+      console.log = originalConsoleLog;
+      console.error = originalConsoleError;
+      console.warn = originalConsoleWarn;
+    }
     
-    // Check if the scraping was successful
-    if (!result || !result.success) {
-      log.error('Failed to fetch documentation. Skipping compile step.');
+    // Proceed to compilation regardless of internal scrape timeout,
+    // but check if scrapeFromUrl itself threw a fatal error (unlikely now)
+    // or if the result object indicates a fundamental setup failure (e.g., bad URL initially)
+    if (!result || !result.success) { // result.success is mainly for initial setup errors now
+      log.error('Scraping setup failed or scrapeFromUrl encountered a fatal error. Skipping compile step.');
       return;
     }
     
-    // Now run the compile step (equivalent to slurp compile)
-    // Extract a descriptive name from the URL for the output filename
+    // --- Compilation Step ---
+    log.info('Scraping phase finished (completed or timed out). Starting compilation...');
     
-    // Determine a proper name for the library based on the URL
-    // The hostname should look like "reactjs.org" for reactjs
+    // Determine output filename
     const urlObj = new URL(url);
     let siteName = '';
-    
-    // Get domain name without TLD
     const domainMatch = urlObj.hostname.match(/([^.]+)\.[^.]+$/);
     if (domainMatch && domainMatch[1]) {
       siteName = domainMatch[1];
     } else {
-      // Fallback to first part of hostname
       siteName = urlObj.hostname.split('.')[0];
     }
-    
-    // Try to get a meaningful name, with fallbacks
     const outputName = siteName || '';
     const outputFilename = `${outputName}_docs.md`;
-
-    // Use 'compiled' as the standard output directory, configurable via .env
-    // Use SLURP_COMPILED_DIR for the final output directory, defaulting to 'compiled'
     const outputDir = process.env.SLURP_COMPILED_DIR || 'compiled';
     const finalOutputPath = path.join(outputDir, outputFilename);
 
@@ -165,17 +165,9 @@ async function main() {
       fs.mkdirSync(outputDir, { recursive: true });
     }
 
-    // Use 'compiled' as the standard output directory, but allow it to be configurable via .env
-    // Define compile options first
-    
-    // Extract the input directory name to use as part of the output filename
-    // This ensures we maintain the domain name in the output file
     const directCompileOptions = {
-      inputDir: result.outputDir,
-      // Force the output filename to be based on the domain name,
-      // not relying on env variables which might override it
-      outputFile: finalOutputPath, // Use the pre-calculated final path
-      // Also set output name directly to override any defaults
+      inputDir: result.outputDir, // Use the outputDir returned by scrapeFromUrl
+      outputFile: finalOutputPath,
       outputName: outputName,
       preserveMetadata: process.env.SLURP_PRESERVE_METADATA !== 'false',
       removeNavigation: process.env.SLURP_REMOVE_NAVIGATION !== 'false',
@@ -183,28 +175,20 @@ async function main() {
     };
 
     try {
-      // We've already ensured the output directory exists above
-      
-      // Create compiler instance
       const compiler = new MarkdownCompiler(directCompileOptions);
-      
-      // Run compilation
       const compileResult = await compiler.compile();
-      
-      // Display minimal results
       log.info(`Compiled to ${path.relative(process.cwd(), compileResult.outputFile)}`);
 
-      // Cleanup partials if enabled
-      const deletePartials = process.env.SLURP_DELETE_PARTIALS !== 'false'; // Default true
+      // Cleanup partials
+      const deletePartials = process.env.SLURP_DELETE_PARTIALS !== 'false';
       if (deletePartials && compileResult.stats.processedFiles > 0) {
         log.verbose(`Deleting partials directory: ${directCompileOptions.inputDir}`);
         await fs.remove(directCompileOptions.inputDir);
         log.verbose(`Partials directory deleted.`);
       }
-
     } catch (error) {
       log.error(`Error during compilation: ${error.message}`);
-      console.error(error.stack); // Show stack trace for compile errors too
+      console.error(error.stack);
     }
     return;
   }
@@ -454,15 +438,6 @@ async function scrapeFromUrl(url, library, version) {
       }
     };
     
-    // Add to registry for future reference
-    try {
-      const registryLookup = new LocalRegistryLookup();
-      await registryLookup.addUrlToRegistry(url, generatedLibrary, version);
-      log.verbose(`Added ${url} to registry as "${generatedLibrary}"`);
-    } catch (regError) {
-      log.verbose(`Note: Could not add to registry: ${regError.message}`);
-    }
-    
     const scraper = new DocumentationScraper(scrapeConfig);
     
     // Set up minimal logging
@@ -501,8 +476,9 @@ async function scrapeFromUrl(url, library, version) {
     
     await scraper.start();
     
-    // Return success result information for chaining
+    // Return success result information AND the scraper instance
     return {
+      scraper: scraper, // Return the instance
       success: true,
       outputDir: structuredOutputDir,
       libraryName: generatedLibrary
@@ -512,8 +488,9 @@ async function scrapeFromUrl(url, library, version) {
   } catch (error) {
     log.error(`Error: ${error.message}`);
     console.error(error.stack); // Always show stack trace for debugging
-    // Return failure information
+    // Return failure information AND the scraper instance (if created)
     return {
+      scraper: scraper || null, // Return instance if it exists
       success: false
     };
   }

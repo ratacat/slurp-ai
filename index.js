@@ -116,7 +116,6 @@ ${markdown}`;
       
       const outputPath = path.join(outputDir, filename);
       await fs.writeFile(outputPath, content);
-      console.log(`Saved ${url} to ${outputPath}`);
     };
     
     await scraper.start();

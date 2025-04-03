@@ -9,6 +9,7 @@ const EventEmitter = require('events');
 const { extract } = require('@extractus/article-extractor');
 const { resolvePath } = require('./utils/pathUtils');
 const { cleanupMarkdown: sharedCleanupMarkdown } = require('./utils/markdownUtils');
+const logger = require('./utils/logger'); // Import the logger utility
 // Handle potential default export for p-queue (CommonJS/ESM compatibility)
 let PQueueImport = require('p-queue');
 if (PQueueImport && typeof PQueueImport === 'object' && PQueueImport.default) {
@@ -238,7 +239,8 @@ class DocsToMarkdown extends EventEmitter {
       failed: 0,
       startTime: null,
       endTime: null
-    };
+    }; // End of this.stats initialization
+    // Logger is now imported, no need to define it here
   }
 
   /**
@@ -437,13 +439,48 @@ class DocsToMarkdown extends EventEmitter {
     
     this.addToQueue(this.baseUrl, browser);
     
-    await this.queue.onIdle();
+    logger.debug(`Waiting for scraping phase to complete... Initial Queue Size: ${this.queue.size}, Pending: ${this.queue.pending}`);
     
-    if (browser) {
-      await browser.close();
+    const checkInterval = 2000; // Check every 2 seconds
+    const internalTimeout = parseInt(process.env.SLURP_TIMEOUT, 10) || 60000;
+    const hangTimeout = internalTimeout * 1.5; // Timeout if no progress for 1.5x task timeout
+    let lastProcessedCount = -1;
+    let lastProgressTime = Date.now();
+    
+    while (this.queue.size > 0 || this.queue.pending > 0) {
+      await new Promise(resolve => setTimeout(resolve, checkInterval)); // Wait for interval
+      
+      logger.debug(`Queue Check - Size: ${this.queue.size}, Pending: ${this.queue.pending}, Processed: ${this.stats.processed}`);
+      
+      if (this.stats.processed > lastProcessedCount) {
+        // Progress was made
+        lastProcessedCount = this.stats.processed;
+        lastProgressTime = Date.now();
+      } else {
+        // No progress since last check
+        if (Date.now() - lastProgressTime > hangTimeout) {
+          logger.warn(`No scraping progress for ${hangTimeout / 1000}s. Assuming remaining tasks are hung. Proceeding...`);
+          // Optionally, try stopping the queue forcefully here if needed, but let's see if breaking is enough
+          // this.queue.stop();
+          break; // Exit the loop
+        }
+      }
     }
     
-    this.stats.endTime = new Date();
+    logger.debug(`Scraping loop finished. Final Queue Size: ${this.queue.size}, Pending: ${this.queue.pending}`);
+
+    // Close browser after scraping loop finishes (either idle or timeout break)
+    if (browser) {
+      logger.debug('Closing browser...');
+      try {
+         await browser.close();
+         logger.debug('Browser closed.');
+      } catch (closeError) {
+         logger.warn(`Error closing browser: ${closeError.message}`);
+      }
+    }
+    
+    this.stats.endTime = new Date(); // Calculate stats after queue idle and browser close
     const duration = (this.stats.endTime - this.stats.startTime) / 1000;
     
     const stats = {
@@ -464,6 +501,15 @@ class DocsToMarkdown extends EventEmitter {
   }
 
   /**
+   * Forcefully stops the queue, rejecting pending promises.
+   */
+  stopQueue() {
+    logger.debug('Forcefully stopping the queue...');
+    this.queue.stop();
+    logger.debug('Queue stop command issued.');
+  }
+
+  /**
    * Add a URL to the processing queue
    * @param {string} url - The URL to process
    * @param {Browser} browser - Puppeteer browser instance
@@ -475,17 +521,22 @@ class DocsToMarkdown extends EventEmitter {
     }
     
     if (this.hasReachedMaxPages()) {
-      // Only log this message for the first URL we reject
+      // Only log this message once
       if (this.getTotalPageCount() === this.maxPages) {
-        //console.log(`Reached maximum of ${this.maxPages} pages, not adding more to queue.`);
+         logger.debug(`Reached maximum of ${this.maxPages} pages. No longer adding new URLs to the queue.`);
       }
-      return false;
+      return false; // Don't add this URL
     }
     
     this.queuedUrls.add(url);
     
+    // Use SLURP_TIMEOUT from env, add a buffer (e.g., 5s), default to 70s
+    const internalTimeout = parseInt(process.env.SLURP_TIMEOUT, 10) || 60000;
+    const taskTimeout = internalTimeout + 5000; // Task timeout slightly longer than internal
     this.queue.add(async () => {
+      const taskId = `Task-${url.substring(url.lastIndexOf('/') + 1)}`; // Simple ID for logging
       try {
+        logger.debug(`${taskId}: Starting execution.`);
         this.queuedUrls.delete(url);
         this.inProgressUrls.add(url);
         
@@ -497,49 +548,74 @@ class DocsToMarkdown extends EventEmitter {
           queueSize: this.queue.size,
           inProgress: this.inProgressUrls.size
         });
-        
-        console.log(`Processing ${url} (${this.visitedUrls.size}/${this.maxPages || 'unlimited'}) - Queue size: ${this.queue.size}`);
-        
+
         let html;
-        if (this.useHeadless) {
+        logger.debug(`${taskId}: Fetching content (headless=${this.useHeadless})...`);
+        if (this.useHeadless && browser) { // Ensure browser exists if headless is true
           const page = await browser.newPage();
-          await page.setDefaultNavigationTimeout(30000);
-          await page.goto(url, { waitUntil: 'networkidle2' });
-          html = await page.content();
-          await page.close();
+          let pageError = null;
+          try {
+              await page.setDefaultNavigationTimeout(60000); // Using 60s timeout
+              await page.goto(url, { waitUntil: 'networkidle2' }); // Using networkidle2
+              html = await page.content();
+              logger.debug(`${taskId}: Puppeteer fetch successful.`);
+          } catch (err) {
+              pageError = err;
+              logger.debug(`${taskId}: Puppeteer navigation/content error: ${err.message}`);
+          } finally {
+              if (page && !page.isClosed()) {
+                  await page.close();
+              }
+          }
+          if (pageError) throw pageError; // Re-throw if error occurred
         } else {
-          const response = await axios.get(url, {
-            timeout: 30000,
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-          });
-          html = response.data;
+           logger.debug(`${taskId}: Using axios.`);
+           const response = await axios.get(url, {
+             timeout: 60000, // Match timeout
+             headers: {
+               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+             }
+           }, { timeout: taskTimeout }); // Add timeout option to the queue task
+           html = response.data;
+           logger.debug(`${taskId}: Axios fetch successful.`);
         }
         
+        logger.debug(`${taskId}: Loading content into cheerio...`);
         const $ = cheerio.load(html);
         
+        logger.debug(`${taskId}: Extracting links...`);
         const newUrls = this.extractLinks($, url);
+        logger.debug(`${taskId}: Found ${newUrls.length} links.`);
         
         if (!this.hasReachedMaxPages()) {
+          logger.debug(`${taskId}: Adding ${newUrls.length} new URLs to queue...`);
           for (const newUrl of newUrls) {
             this.addToQueue(newUrl, browser);
           }
+        } else {
+           logger.debug(`${taskId}: Max pages reached, not adding extracted links.`);
         }
         
+        logger.debug(`${taskId}: Processing page content...`);
         await this.processPage(url, $);
+        logger.debug(`${taskId}: Page content processed.`);
         
         this.visitedUrls.add(url);
         this.stats.processed++;
+        logger.debug(`${taskId}: Marked as visited. Processed count: ${this.stats.processed}`);
         
       } catch (error) {
-        console.error(`Error processing ${url}:`, error.message);
+        // Log the specific error for this task
+        logger.debug(`${taskId}: Error caught - ${error.message}`);
+        console.error(`Error processing ${url}:`, error.message); // Keep user-facing error
         this.stats.failed++;
       } finally {
+        // This block MUST execute to ensure the task is removed from the inProgress set
         this.inProgressUrls.delete(url);
+        logger.debug(`${taskId}: Finished execution (finally block). InProgress size: ${this.inProgressUrls.size}`);
       }
     });
-    
+    logger.debug(`Added task for ${url}. Queue Size: ${this.queue.size}, Pending: ${this.queue.pending}`);
     return true;
   }
 
@@ -670,8 +746,8 @@ class DocsToMarkdown extends EventEmitter {
       }
       
       const pathSegments = urlObj.pathname.split('/').filter(Boolean);
-      if (pathSegments.length > 5) {
-        const docPatterns = ['/api/', '/reference/', '/guide/', '/tutorial/', '/example/', '/doc/'];
+      if (pathSegments.length > process.env.SLURP_DEPTH_NUMBER_OF_SEGMENTS) {
+        const docPatterns = process.env.SLURP_DEPTH_SEGMENT_CHECK;
         let isDocPath = false;
         
         for (const pattern of docPatterns) {
@@ -786,8 +862,6 @@ ${markdown}`;
         Math.floor((this.visitedUrls.size / this.maxPages) * 100) : 
         Math.floor((this.visitedUrls.size / this.getTotalPageCount()) * 100)
     });
-    
-    console.log(`Saved ${url} to ${outputPath}`);
   }
 }
 

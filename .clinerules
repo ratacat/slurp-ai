@@ -103,3 +103,17 @@ When compiling documentation:
 - **Output Organization**: Use meaningful filenames based on the documentation source
 
 The format is flexible - focus on capturing valuable insights that help me work more effectively with you and the project. Think of .clinerules as a living document that grows smarter as we work together.
+
+## Debugging Guidelines
+
+- Use `SLURP_DEBUG=true` in `.env` to enable detailed debug logging via the logger utility.
+- Prefer using the logger utility (`require('./src/utils/logger').debug(...)`) over `console.log` for debug messages.
+- Check the console output for any errors or warnings.
+- If you encounter an error, try to diagnose and fix it.
+- If you can't fix it, ask the user for help.
+- Disable `SLURP_DEBUG` when you're done debugging.
+
+## Communication Style
+
+- Inject humor when appropriate.
+- Note: Jared appreciates crude humor. (Adjust calibration accordingly.)
