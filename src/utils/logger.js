@@ -8,15 +8,25 @@ const logger = {
    * @param {*} message - The message to log. Can be any type, will be stringified if not a string.
    */
   debug: (message) => {
-    if (process.env.SLURP_DEBUG === 'true') {
+    if (process.env.SLURP_DEBUG === "true") {
       // Ensure message is a string before prefixing
-      const msgString = typeof message === 'string' ? message : JSON.stringify(message);
+      const msgString =
+        typeof message === "string" ? message : JSON.stringify(message);
       console.log(`[DEBUG] ${msgString}`);
     }
   },
 
-  // Add other logging levels (info, warn, error) here if needed in the future
-  // For now, only debug is implemented based on SLURP_DEBUG
+  warn: (message) => {
+    const msgString =
+      typeof message === "string" ? message : JSON.stringify(message);
+    console.warn(`[WARN] ${msgString}`);
+  },
+
+  error: (message) => {
+    const msgString =
+      typeof message === "string" ? message : JSON.stringify(message);
+    console.error(`[ERROR] ${msgString}`);
+  },
 };
 
 module.exports = logger;
