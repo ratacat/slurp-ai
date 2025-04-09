@@ -1,5 +1,5 @@
-const path = require('path');
-const os = require('os');
+import path from 'path';
+import os from 'os';
 
 /**
  * Resolve a path relative to a given base path.
@@ -28,4 +28,4 @@ function resolvePath(relativePath, basePath) {
   return path.join(basePath, relativePath);
 }
 
-module.exports = { resolvePath };
+export { resolvePath };

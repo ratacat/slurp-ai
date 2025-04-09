@@ -32,5 +32,4 @@ function cleanupMarkdown(markdown) {
     // Trim leading/trailing whitespace
     .trim();
 }
-
-module.exports = { cleanupMarkdown };
+export { cleanupMarkdown };

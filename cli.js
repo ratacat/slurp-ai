@@ -3,10 +3,10 @@
 const path = require('path');
 // Explicitly load .env from the script's directory
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
-const DocumentationScraper = require('./src/DocumentationScraper');
-const { MarkdownCompiler } = require('./src/MarkdownCompiler');
-const fs = require('fs-extra');
+const fs = require('fs-extra'); // Keep fs-extra if needed elsewhere, e.g., for compile command cleanup
 const chalk = require('chalk') || { green: (s) => s, red: (s) => s, yellow: (s) => s, blue: (s) => s, gray: (s) => s };
+const { runSlurpWorkflow } = require('./src/slurpWorkflow'); // Import the new workflow function
+const { MarkdownCompiler } = require('./src/MarkdownCompiler'); // Keep for compile command
 
 /**
  * SlurpAI - Documentation scraper for AI systems
@@ -91,106 +91,44 @@ const log = {
 async function main() {
   // Check for direct URL mode first (before entering the switch)
   if (command && isUrl(command)) {
-    // This is the new 'slurp <url>' command that combines fetch and compile in one step
-    // First, scrape the URL (equivalent to slurp fetch <url>), then compile the results
     const url = command;
-    
-    // Set a special flag for direct URL mode to control output
-    const directUrlMode = true;
-    
-    // Conditionally suppress output based on SLURP_DEBUG
-    let originalConsoleLog, originalConsoleError, originalConsoleWarn;
-    if (process.env.SLURP_DEBUG !== 'true') {
-      // Suppress all output initially
-      originalConsoleLog = console.log;
-      originalConsoleError = console.error;
-      originalConsoleWarn = console.warn;
-      
-      // Override console methods to hide warnings and verbose output
-      console.log = function() {
-        // Only log if it's an error or specific important messages
-        if (arguments[0] && typeof arguments[0] === 'string' &&
-            (arguments[0].includes('Error') || arguments[0].includes('Failed'))) {
-          // In direct URL mode, don't automatically show "Failed: 0 pages"
-          if (directUrlMode && arguments[0].includes('Failed: 0 pages')) {
-            return; // Skip this message in direct URL mode
-          }
-          originalConsoleLog.apply(console, arguments);
-        }
-      };
-      console.error = function() { originalConsoleError.apply(console, arguments); };
-      console.warn = function() {};
-      
-      // Also suppress process warnings
-      process.env.NODE_NO_WARNINGS = '1';
-    }
-    
-    // Call scrapeFromUrl and wait for it to complete (or time out internally)
-    const result = await scrapeFromUrl(url, null, null);
-    
-    // Restore console methods only if they were overridden
-    if (process.env.SLURP_DEBUG !== 'true' && originalConsoleLog) {
-      console.log = originalConsoleLog;
-      console.error = originalConsoleError;
-      console.warn = originalConsoleWarn;
-    }
-    
-    // Proceed to compilation regardless of internal scrape timeout,
-    // but check if scrapeFromUrl itself threw a fatal error (unlikely now)
-    // or if the result object indicates a fundamental setup failure (e.g., bad URL initially)
-    if (!result || !result.success) { // result.success is mainly for initial setup errors now
-      log.error('Scraping setup failed or scrapeFromUrl encountered a fatal error. Skipping compile step.');
-      return;
-    }
-    
-    // --- Compilation Step ---
-    log.info('Scraping phase finished (completed or timed out). Starting compilation...');
-    
-    // Determine output filename
-    const urlObj = new URL(url);
-    let siteName = '';
-    const domainMatch = urlObj.hostname.match(/([^.]+)\.[^.]+$/);
-    if (domainMatch && domainMatch[1]) {
-      siteName = domainMatch[1];
-    } else {
-      siteName = urlObj.hostname.split('.')[0];
-    }
-    const outputName = siteName || '';
-    const outputFilename = `${outputName}_docs.md`;
-    const outputDir = process.env.SLURP_COMPILED_DIR || 'compiled';
-    const finalOutputPath = path.join(outputDir, outputFilename);
+    log.info(`Running Slurp workflow for URL: ${url}`);
 
-    // Ensure the output directory exists
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
-    }
-
-    const directCompileOptions = {
-      inputDir: result.outputDir, // Use the outputDir returned by scrapeFromUrl
-      outputFile: finalOutputPath,
-      outputName: outputName,
-      preserveMetadata: process.env.SLURP_PRESERVE_METADATA !== 'false',
-      removeNavigation: process.env.SLURP_REMOVE_NAVIGATION !== 'false',
-      removeDuplicates: process.env.SLURP_REMOVE_DUPLICATES !== 'false'
+    // Prepare options for the workflow function based on CLI params
+    const workflowOptions = {
+      // Pass relevant options parsed from 'params' object
+      maxPages: params.max ? parseInt(params.max, 10) : undefined,
+      useHeadless: params.headless !== 'false' ? undefined : false, // Only pass if explicitly false
+      concurrency: params.concurrency ? parseInt(params.concurrency, 10) : undefined,
+      retryCount: params['retry-count'] ? parseInt(params['retry-count'], 10) : undefined,
+      retryDelay: params['retry-delay'] ? parseInt(params['retry-delay'], 10) : undefined,
+      // Compilation options can also be passed if needed, or rely on env vars within the workflow
+      // preserveMetadata: ...,
+      // removeNavigation: ...,
+      // removeDuplicates: ...,
+      // deletePartials: ...,
+      // Note: output paths are handled within runSlurpWorkflow based on env/defaults
     };
 
     try {
-      const compiler = new MarkdownCompiler(directCompileOptions);
-      const compileResult = await compiler.compile();
-      log.info(`Compiled to ${path.relative(process.cwd(), compileResult.outputFile)}`);
-
-      // Cleanup partials
-      const deletePartials = process.env.SLURP_DELETE_PARTIALS !== 'false';
-      if (deletePartials && compileResult.stats.processedFiles > 0) {
-        log.verbose(`Deleting partials directory: ${directCompileOptions.inputDir}`);
-        await fs.remove(directCompileOptions.inputDir);
-        log.verbose(`Partials directory deleted.`);
+      const result = await runSlurpWorkflow(url, workflowOptions);
+      if (result.success) {
+        log.success(`Workflow completed. Compiled file: ${result.compiledFilePath}`);
+      } else {
+        // Error already logged within runSlurpWorkflow
+        log.error('Slurp workflow failed.');
+        // Optionally set a non-zero exit code
+        process.exitCode = 1;
       }
     } catch (error) {
-      log.error(`Error during compilation: ${error.message}`);
-      console.error(error.stack);
+      // Catch any unexpected errors from the workflow function itself
+      log.error(`Unexpected error during Slurp workflow: ${error.message}`);
+      if (error.stack) {
+          log.verbose(error.stack);
+      }
+      process.exitCode = 1;
     }
-    return;
+    return; // Exit after handling the direct URL case
   }
   
   // Handle commands based on the CLI format in project.md
@@ -333,209 +271,6 @@ function isUrl(str) {
   }
 }
 
-/**
- * @param {string} library - Name of the library (optional)
- * @param {string} version - Version of the library (optional)
- * @returns {Object} Result object with success status and outputDir
- * Scrape documentation from a specific URL
- * @param {string} url - URL to scrape
- * @param {string} library - Library name (optional)
- * @param {string} version - Version (optional)
- */
-async function scrapeFromUrl(url, library, version) {
-  try {
-    // Generate library name from URL if not provided
-    const urlObj = new URL(url);
-    const generatedLibrary = library || extractNameFromUrl(url);
-    
-    // Create a better directory structure based on the URL path
-    const pathSegments = urlObj.pathname.split('/').filter(Boolean);
-    const siteName = urlObj.hostname.split('.')[0]; // e.g., "modelcontextprotocol" from "modelcontextprotocol.io"
-    
-    // Base output directory
-    const baseOutputDir = params.output || process.env.SLURP_PARTIALS_DIR || path.join(__dirname, 'slurp_partials');
-    
-    // Create a structured output path that mirrors the URL structure
-    let structuredOutputDir = path.join(baseOutputDir, siteName);
-    
-    // Add version to path if provided
-    if (version) {
-      structuredOutputDir = path.join(structuredOutputDir, version);
-    }
-    
-    // Configure the scraper
-    const scrapeConfig = {
-      baseUrl: url,
-      outputDir: structuredOutputDir,
-      // Use CLI param first, then env var, then default
-      maxPages: parseInt(params.max || process.env.SLURP_MAX_PAGES_PER_SITE || '20', 10),
-      useHeadless: params.headless !== 'false',
-      
-      // Set library information if provided
-      libraryInfo: {
-        library: generatedLibrary,
-        version: version || '',
-        exactVersionMatch: false,
-        sourceType: 'url'
-      },
-      
-      // Default content selectors (can be improved with site-specific selectors)
-      contentSelector: 'main, .content, .document, article, .documentation, .main-content',
-      excludeSelectors: [
-        'nav',
-        '.navigation',
-        '.sidebar',
-        '.menu',
-        '.toc',
-        'footer',
-        '.footer',
-        'script',
-        'style',
-        '.headerlink'
-      ],
-      
-      // Domain restrictions
-      allowedDomains: [urlObj.hostname],
-      
-      // Async queue options
-      concurrency: parseInt(params.concurrency || process.env.SLURP_CONCURRENCY || '10', 10),
-      retryCount: parseInt(params['retry-count'] || '3'),
-      retryDelay: parseInt(params['retry-delay'] || '1000')
-    };
-    
-    // Custom filename generator to create a better file structure
-    scrapeConfig.getFilenameForUrl = function(pageUrl) {
-      try {
-        const pageUrlObj = new URL(pageUrl);
-        const pagePath = pageUrlObj.pathname;
-        
-        // If it's the base URL with no path or just a trailing slash
-        if (pagePath === '/' || pagePath === '') {
-          return 'index.md';
-        }
-        
-        // Remove leading and trailing slashes and split into segments
-        const segments = pagePath.replace(/^\/|\/$/g, '').split('/');
-        
-        // Create directories based on path segments
-        let currentDir = this.outputDir;
-        for (let i = 0; i < segments.length - 1; i++) {
-          currentDir = path.join(currentDir, segments[i]);
-          fs.ensureDirSync(currentDir);
-        }
-        
-        // Last segment becomes the filename
-        const lastSegment = segments[segments.length - 1] || 'index';
-        
-        // Return the full path including directories
-        const relativePath = segments.slice(0, -1).join('/');
-        const filename = lastSegment + '.md';
-        
-        return relativePath ? path.join(relativePath, filename) : filename;
-      } catch (error) {
-        // Fallback to a safe filename
-        return `page-${Date.now()}.md`;
-      }
-    };
-    
-    const scraper = new DocumentationScraper(scrapeConfig);
-    
-    // Set up minimal logging
-    let processed = 0;
-    let failedPages = 0;
-    
-    // One-line progress reporting with minimal output
-    scraper.on('init', () => {});
-    
-    // Only show one line of output periodically
-    scraper.on('progress', (data) => {
-      if (data.type === 'processing') {
-        processed++;
-        // Update the count on the same line for every document
-        process.stdout.write(`\rProcessing documents: ${processed}`);
-      } else if (data.type === 'failed') {
-        failedPages++;
-      }
-    });
-    
-    // Create a variable to store the stats for later use
-    let scrapingStats = null;
-
-    scraper.on('complete', (stats) => {
-      // Store stats for later without displaying them yet
-      scrapingStats = stats;
-      
-      // Add a newline after processing is complete
-      process.stdout.write('\n');
-      
-      // Only display failure info if there were failures
-      if (stats.failed > 0) {
-        process.stdout.write(`Failed: ${stats.failed} pages\n`);
-      }
-    });
-    
-    await scraper.start();
-    
-    // Return success result information AND the scraper instance
-    return {
-      scraper: scraper, // Return the instance
-      success: true,
-      outputDir: structuredOutputDir,
-      libraryName: generatedLibrary
-    };
-    
-    
-  } catch (error) {
-    log.error(`Error: ${error.message}`);
-    console.error(error.stack); // Always show stack trace for debugging
-    // Return failure information AND the scraper instance (if created)
-    return {
-      scraper: scraper || null, // Return instance if it exists
-      success: false
-    };
-  }
-}
-
-/**
- * Extract a name from a URL for use as a library name
- * @param {string} url - URL to extract name from
- * @returns {string} Extracted name
- */
-function extractNameFromUrl(url) {
-  try {
-    const urlObj = new URL(url);
-    
-    // Try to get a meaningful name from the path
-    const pathSegments = urlObj.pathname.split('/').filter(Boolean);
-    
-    if (pathSegments.length > 0) {
-      // Use the last meaningful path segment
-      for (let i = pathSegments.length - 1; i >= 0; i--) {
-        const segment = pathSegments[i];
-        // Skip common segments like 'docs', 'api', etc.
-        if (!['docs', 'documentation', 'api', 'reference', 'guide', 'introduction'].includes(segment.toLowerCase())) {
-          return segment;
-        }
-      }
-      // If all segments are common, use the last one
-      return pathSegments[pathSegments.length - 1];
-    }
-    
-    // If no path segments, use the hostname without TLD
-    const hostParts = urlObj.hostname.split('.');
-    if (hostParts.length >= 2) {
-      // Remove common TLDs and subdomains
-      const domain = hostParts[hostParts.length - 2];
-      return domain;
-    }
-    
-    // Fallback to full hostname
-    return urlObj.hostname.replace(/\./g, '-');
-  } catch (error) {
-    // Generate a timestamp-based name as fallback
-    return `doc-${Date.now()}`;
-  }
-}
 
 /**
  * Wait for user input

@@ -11,10 +11,11 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "description": "",
   "dependencies": {
     "@extractus/article-extractor": "^8.0.17",
+    "@modelcontextprotocol/sdk": "^1.8.0",
     "axios": "^1.8.4",
     "chalk": "^4.1.0",
     "cheerio": "^1.0.0",
@@ -23,6 +24,7 @@
     "js-yaml": "^4.1.0",
     "p-queue": "^8.1.0",
     "puppeteer": "^24.4.0",
-    "turndown": "^7.2.0"
+    "turndown": "^7.2.0",
+    "zod": "^3.24.2"
   }
 }

@@ -1,9 +1,9 @@
-const fs = require('fs-extra');
-const path = require('path');
-const crypto = require('crypto');
-const yaml = require('js-yaml');
-const { resolvePath } = require('./utils/pathUtils');
-const { cleanupMarkdown: sharedCleanupMarkdown } = require('./utils/markdownUtils');
+import fs from 'fs-extra';
+import path from 'path';
+import crypto from 'crypto';
+import yaml from 'js-yaml';
+import { resolvePath } from './utils/pathUtils.js';
+import { cleanupMarkdown as sharedCleanupMarkdown } from './utils/markdownUtils.js';
 /**
  * MarkdownCompiler - A class to compile markdown files into a single document
  */
@@ -294,4 +294,4 @@ class MarkdownCompiler {
   }
 }
 
-module.exports = { MarkdownCompiler };
+export { MarkdownCompiler };
