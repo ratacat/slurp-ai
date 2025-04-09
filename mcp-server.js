@@ -6,7 +6,7 @@ import fs from 'fs/promises'; // Use promises API for async file reading
 import dotenv from 'dotenv';
 // Fix imports to match the actual file paths
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js"; // Revert to McpServer
 import { McpError, ErrorCode, ReadResourceRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
 // Direct ESM imports now that modules have been converted
@@ -29,7 +29,7 @@ async function main() {
   log.info("Initializing Slurp MCP Server...");
 
   // 1. Initialize MCP Server
-  const server = new McpServer(
+  const server = new McpServer( // Revert to McpServer
     {
       // Server Information
       name: "slurp-mcp-server",
@@ -113,7 +113,7 @@ async function main() {
 
   // ReadResourceRequestSchema is imported at the top now
 
-  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  server.resource(ReadResourceRequestSchema, async (request) => { // Try server.resource() for McpServer // Revert to setRequestHandler
     const requestedUri = request.params.uri;
     log.verbose(`Received resources/read request for URI: ${requestedUri}`);
 

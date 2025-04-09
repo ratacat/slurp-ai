@@ -70,12 +70,12 @@ You can customize SlurpAI's behavior by creating a `.env` file in the project ro
 ## Todo
 
 - Check default values without .env and see what happens. Probably could be better.
+    - currently SLURP_OUTPUT_DIR seems to be ignored and it's using 'compiled'
+- Better logging around how many pages detected and accepted/denied and why.
 - Allow slurp to accept multiple urls to account and compile different folders if necessary in a single call.
-- Keep a local registry of existing slurps.
-- Build a command for searching for a doc site based on string / version number instead of url.
-- Build command for auto searching all docs listed in package.json
+- Build a command for locating a doc site via web search based on string / version number instead of url.
 - Build a command for looking up exact code from an installed NPM package and converting the entire thing to function signatures to compile to a doc.
-- Add to an MCP server.
+- Add MCP server.
 
 
 | `SLURP_DELETE_PARTIALS`   | `true`          | Delete the intermediate `SLURP_OUTPUT_DIR` after successful compilation |
