@@ -14,7 +14,7 @@ const logger = {
    */
   info: (message) => {
     const msgString = typeof message === 'string' ? message : JSON.stringify(message);
-    console.log(msgString);
+    console.error(msgString); // Use console.error for stderr
   },
 
   /**
@@ -23,7 +23,7 @@ const logger = {
    */
   success: (message) => {
     const msgString = typeof message === 'string' ? message : JSON.stringify(message);
-    console.log(chalkLib.green(`✅ ${msgString}`));
+    console.error(chalkLib.green(`✅ ${msgString}`)); // Use console.error for stderr
   },
 
   /**
@@ -41,7 +41,7 @@ const logger = {
    */
   warn: (message) => {
     const msgString = typeof message === 'string' ? message : JSON.stringify(message);
-    console.log(chalkLib.yellow(`⚠️ ${msgString}`));
+    console.error(chalkLib.yellow(`⚠️ ${msgString}`)); // Use console.error for stderr
   },
 
   /**
@@ -51,7 +51,7 @@ const logger = {
   verbose: (message) => {
     if (process.env.SLURP_VERBOSE === 'true') {
       const msgString = typeof message === 'string' ? message : JSON.stringify(message);
-      console.log(chalkLib.gray(`[VERBOSE] ${msgString}`));
+      console.error(chalkLib.gray(`[VERBOSE] ${msgString}`)); // Use console.error for stderr
     }
   },
 
@@ -62,7 +62,7 @@ const logger = {
   debug: (message) => {
     if (process.env.SLURP_DEBUG === 'true') {
       const msgString = typeof message === 'string' ? message : JSON.stringify(message);
-      console.log(`[DEBUG] ${msgString}`);
+      console.error(`[DEBUG] ${msgString}`); // Use console.error for stderr
     }
   },
 
@@ -73,7 +73,7 @@ const logger = {
    progress: (message) => {
     if (process.env.SLURP_VERBOSE === 'true' || process.env.SLURP_DEBUG === 'true') {
       const msgString = typeof message === 'string' ? message : JSON.stringify(message);
-      console.log(chalkLib.blue(`[PROGRESS] ${msgString}`));
+      console.error(chalkLib.blue(`[PROGRESS] ${msgString}`)); // Use console.error for stderr
     }
   },
 
@@ -83,9 +83,9 @@ const logger = {
    * @param {object} items - Key-value pairs for the summary details.
    */
   summary: (title, items) => {
-    console.log(`\n${title}:`);
+    console.error(`\n${title}:`); // Use console.error for stderr
     for (const [key, value] of Object.entries(items)) {
-      console.log(`${key}: ${value}`);
+      console.error(`${key}: ${value}`); // Use console.error for stderr
     }
   }
 };

@@ -11,7 +11,7 @@ import { McpError, ErrorCode, ReadResourceRequestSchema } from '@modelcontextpro
 
 // Direct ESM imports now that modules have been converted
 import { log } from './src/utils/logger.js';
-import { z } from 'zod';
+import { z } from 'zod'; // Re-add Zod import
 import { runSlurpWorkflow } from './src/slurpWorkflow.js';
 
 // Replicate __dirname behavior in ESM
@@ -48,17 +48,14 @@ async function main() {
   );
   // --- Tool and Resource Handlers ---
 
-  // Define the input schema for the slurp_url tool using zod
-  const SlurpUrlInputSchema = z.object({
-    url: z.string().url({ message: "Invalid URL provided." }),
-    // Add other options here if needed later, e.g., version: z.string().optional()
-  });
-
+  // Schema defined inline below
   // Register the slurp_url tool
   server.tool(
     'slurp_url',
     'Scrapes documentation starting from a given URL, compiles it into a single Markdown file, and returns a resource URI to the compiled content.',
-    SlurpUrlInputSchema,
+    { // Define schema inline as an object literal
+      url: z.string().describe("The starting URL for documentation scraping.")
+    },
     async (args) => {
       const { url } = args; // Args are already validated by the schema
 
