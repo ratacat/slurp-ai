@@ -1,12 +1,20 @@
 #!/usr/bin/env node --no-warnings
 
-const path = require('path');
-// Explicitly load .env from the script's directory
-require('dotenv').config({ path: path.resolve(__dirname, '.env') });
-const fs = require('fs-extra'); // Keep fs-extra if needed elsewhere, e.g., for compile command cleanup
-const chalk = require('chalk') || { green: (s) => s, red: (s) => s, yellow: (s) => s, blue: (s) => s, gray: (s) => s };
-const { runSlurpWorkflow } = require('./src/slurpWorkflow'); // Import the new workflow function
-const { MarkdownCompiler } = require('./src/MarkdownCompiler'); // Keep for compile command
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+import dotenv from 'dotenv';
+import fs from 'fs-extra';
+import chalk from 'chalk';
+import { runSlurpWorkflow } from './src/slurpWorkflow.js';
+import { MarkdownCompiler } from './src/MarkdownCompiler.js';
+
+// Define __dirname equivalent for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Configure dotenv
+dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 /**
  * SlurpAI - Documentation scraper for AI systems
@@ -166,8 +174,11 @@ async function main() {
       // Check if the argument is a URL
       if (isUrl(fetchArg)) {
         log.verbose(`Detected URL: ${fetchArg}`);
-        // Use direct URL scraping
-        await scrapeFromUrl(fetchArg, null, fetchVersion);
+        // Use runSlurpWorkflow instead of scrapeFromUrl
+        const fetchOptions = {
+          version: fetchVersion
+        };
+        await runSlurpWorkflow(fetchArg, fetchOptions);
       } else {
         // Package name provided, but package fetching via DocSlurper is removed.
         log.error('Fetching documentation by package name is disabled.');
@@ -250,7 +261,11 @@ async function main() {
     default:
       // Handle legacy --url flag
       if (params.url) {
-        await scrapeFromUrl(params.url, params.library, params.version);
+        // Use runSlurpWorkflow instead of scrapeFromUrl
+        await runSlurpWorkflow(params.url, { 
+          library: params.library,
+          version: params.version
+        });
       } else { // If no recognized command or legacy flag, show help
         showHelp();
       }
