@@ -81,3 +81,19 @@
         *   Add/refine logging within the server for better debugging.
         *   Ensure graceful handling of edge cases.
     *   **Files to Modify:** Potentially `mcp-server.js` based on test results.
+
+### Debugging Notes & Findings (Post-Implementation)
+
+During the testing phase (Task 5), significant issues were encountered when trying to read resources using the standard `mcp read-resource` command with the stdio transport.
+
+*   **Initial Problem:** `mcp read-resource slurp://... node mcp-server.js` consistently failed with an RPC error: `error: RPC error -32603: Cannot read properties of undefined (reading 'match')`. Debugging indicated this crash occurred *before* the server's resource handler logic was executed.
+*   **Hypothesis:** The `@modelcontextprotocol/sdk` server library attempts internal validation against the standard `ReadResourceRequestSchema` (which expects params as an object `{uri: "..."}`) even when the handler is registered differently. `mcp read-resource` sends the URI as a positional argument (`["..."]`), causing this validation to fail.
+*   **Attempts:**
+    *   Removing the schema from `server.resource()` led to `Cannot read properties of undefined (reading 'uriTemplate')`.
+    *   Adding a URI template (`server.resource('slurp://{+path}', ...)`) still resulted in the original `reading 'match'` error, suggesting the SDK *always* tries to apply the standard schema validation for `resources/read` over stdio, regardless of registration details.
+*   **Conclusion:** There appears to be a fundamental incompatibility or bug in the `@modelcontextprotocol/sdk` server library's handling of the standard `resources/read` method when invoked via `mcp read-resource` (with positional URI) over stdio transport.
+*   **Workaround:** A new tool, `read_slurp_resource`, was added to `mcp-server.js`. This tool accepts the URI via named parameters (`{uri: "..."}`) and successfully reads the resource content. It must be invoked using `mcp call`:
+    ```bash
+    mcp call read_slurp_resource --params '{"uri": "slurp://compiled/master_docs.md"}' --format pretty node mcp-server.js
+    ```
+*   **Recommendation:** Use the `read_slurp_resource` tool via `mcp call` for accessing resources from this server over stdio, as `mcp read-resource` is currently non-functional in this setup.

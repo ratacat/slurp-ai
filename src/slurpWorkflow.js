@@ -57,6 +57,8 @@ function extractNameFromUrl(url) {
  * @param {boolean} [options.removeNavigation=true] - Remove navigation elements during compilation. Defaults to env SLURP_REMOVE_NAVIGATION or true.
  * @param {boolean} [options.removeDuplicates=true] - Remove duplicate content during compilation. Defaults to env SLURP_REMOVE_DUPLICATES or true.
  * @param {boolean} [options.deletePartials=true] - Delete partials directory after successful compilation. Defaults to env SLURP_DELETE_PARTIALS or true.
+ * @param {function(progress: number, total?: number, message?: string): void} [options.onProgress] - Optional callback for progress updates.
+ * @param {AbortSignal} [options.signal] - Optional AbortSignal to allow cancellation.
  * @returns {Promise<{success: boolean, compiledFilePath?: string, error?: Error}>} - Result object indicating success or failure.
  * @async
  */
@@ -135,7 +137,8 @@ async function runSlurpWorkflow(url, options = {}) {
            log.warn(`Error generating filename for ${pageUrl}: ${error.message}`);
            return `page-${Date.now()}.md`;
          }
-       }
+       },
+      signal: options.signal // Pass the signal to the scraper config
     };
 
     scraper = new DocumentationScraper(scrapeConfig);
@@ -147,6 +150,11 @@ async function runSlurpWorkflow(url, options = {}) {
     scraper.on('progress', (data) => {
         if (data.type === 'processing') {
             processedCount++;
+            // Call the progress callback if provided
+            if (options.onProgress) {
+              // We don't know the total pages easily, so omit 'total' for now
+              options.onProgress(processedCount, undefined, `Scraping page ${processedCount}...`);
+            }
             if (processedCount % 10 === 0 || processedCount === 1) { // Log every 10 pages
                  log.verbose(`Scraping progress: ${processedCount} pages processed...`);
             }

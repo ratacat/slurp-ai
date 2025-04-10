@@ -36,6 +36,7 @@ class DocsToMarkdown extends EventEmitter {
    * @param {number} options.concurrency - Number of pages to process concurrently (default: 5)
    * @param {number} options.retryCount - Number of times to retry failed requests (default: 3)
    * @param {number} options.retryDelay - Delay between retries in ms (default: 1000)
+   * @param {AbortSignal} [options.signal] - Optional AbortSignal for cancellation.
    */
   constructor(options) {
     super();
@@ -243,6 +244,13 @@ class DocsToMarkdown extends EventEmitter {
       endTime: null
     }; // End of this.stats initialization
     // Logger is now imported, no need to define it here
+    this.signal = options.signal; // Store the signal
+
+    // Add listener to stop queue if signal is aborted externally
+    this.signal?.addEventListener('abort', () => {
+      log.warn('Abort signal received. Stopping scrape queue.');
+      this.stopQueue();
+    });
   }
 
   /**
@@ -424,8 +432,13 @@ class DocsToMarkdown extends EventEmitter {
    * Start the scraping process
    */
   async start() {
+    // Check signal before starting
+    if (this.signal?.aborted) {
+      log.warn('Scrape aborted before starting.');
+      throw new Error('Scrape aborted');
+    }
     this.stats.startTime = new Date();
-    console.log(`Starting scrape of ${this.baseUrl} with concurrency ${this.concurrency}`);
+    log.info(`Starting scrape of ${this.baseUrl} with concurrency ${this.concurrency}`);
     
     this.emit('init', {
       baseUrl: this.baseUrl,
@@ -494,10 +507,10 @@ class DocsToMarkdown extends EventEmitter {
     
     this.emit('complete', stats);
     
-    console.log(`Scraping complete in ${duration.toFixed(2)} seconds.`);
-    console.log(`Processed: ${this.stats.processed} pages`);
-    console.log(`Failed: ${this.stats.failed} pages`);
-    console.log(`Pages per second: ${(this.stats.processed / duration).toFixed(2)}`);
+    log.info(`Scraping complete in ${duration.toFixed(2)} seconds.`);
+    log.info(`Processed: ${this.stats.processed} pages`);
+    log.info(`Failed: ${this.stats.failed} pages`);
+    log.info(`Pages per second: ${(this.stats.processed / duration).toFixed(2)}`);
     
     return stats;
   }
@@ -518,6 +531,12 @@ class DocsToMarkdown extends EventEmitter {
    * @returns {boolean} Whether the URL was added to the queue
    */
   addToQueue(url, browser) {
+    // Check signal before adding to queue
+    if (this.signal?.aborted) {
+      // log.debug(`Skipping add to queue for ${url} - scrape aborted.`);
+      return false;
+    }
+
     if (this.visitedUrls.has(url) || this.inProgressUrls.has(url) || this.queuedUrls.has(url)) {
       return false;
     }
@@ -536,6 +555,13 @@ class DocsToMarkdown extends EventEmitter {
     const internalTimeout = parseInt(process.env.SLURP_TIMEOUT, 10) || 60000;
     const taskTimeout = internalTimeout + 5000; // Task timeout slightly longer than internal
     this.queue.add(async () => {
+      // Check signal at the beginning of task execution
+      if (this.signal?.aborted) {
+        log.debug(`Task for ${url} cancelled before execution.`);
+        this.queuedUrls.delete(url); // Ensure it's removed if cancelled before starting
+        throw new Error('Scrape aborted');
+      }
+
       const taskId = `Task-${url.substring(url.lastIndexOf('/') + 1)}`; // Simple ID for logging
       try {
         log.debug(`${taskId}: Starting execution.`);
@@ -550,6 +576,9 @@ class DocsToMarkdown extends EventEmitter {
           queueSize: this.queue.size,
           inProgress: this.inProgressUrls.size
         });
+
+        // Check signal before fetching
+        if (this.signal?.aborted) throw new Error('Scrape aborted');
 
         let html;
         log.debug(`${taskId}: Fetching content (headless=${this.useHeadless})...`);
@@ -597,7 +626,10 @@ class DocsToMarkdown extends EventEmitter {
         } else {
            log.debug(`${taskId}: Max pages reached, not adding extracted links.`);
         }
-        
+
+        // Check signal before processing
+        if (this.signal?.aborted) throw new Error('Scrape aborted');
+
         log.debug(`${taskId}: Processing page content...`);
         await this.processPage(url, $);
         log.debug(`${taskId}: Page content processed.`);

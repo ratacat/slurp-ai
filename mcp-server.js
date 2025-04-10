@@ -25,7 +25,7 @@ dotenv.config({ path: path.resolve(__dirname, '.env') });
  * Main function to initialize and run the MCP server.
  * @async
  */
-async function main() { 
+async function main() {
   log.info("Initializing Slurp MCP Server...");
 
   // 1. Initialize MCP Server
@@ -56,14 +56,29 @@ async function main() {
     { // Define schema inline as an object literal
       url: z.string().describe("The starting URL for documentation scraping.")
     },
-    async (args) => {
-      const { url } = args; // Args are already validated by the schema
+    async (args, extra) => { // Add 'extra' parameter
+      
+      // Expect args to be { url: "..." }
+      const url = args.url;
 
-      log.info(`Received slurp_url request for: ${url}`);
+      // Basic validation
+      if (typeof url !== 'string') {
+          log.error(`Invalid URL parameter received. Expected a string, got: ${JSON.stringify(url)}`);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid URL parameter type received: ${typeof url}`);
+      }
+
+      log.debug(`Extracted URL: ${url}`);
+
+      log.info(`Received slurp_url request for URL: ${url}`); // Use extracted url variable
 
       try {
+        // Progress updates removed as progressToken is no longer handled.
+
         // Call the refactored workflow function
-        const result = await runSlurpWorkflow(url); // Pass options if schema includes them
+        log.debug('Starting runSlurpWorkflow...');
+        log.debug(`Calling runSlurpWorkflow with URL: ${url}`); // Use extracted url variable
+        // Pass the signal from the 'extra' object to the workflow options
+        const result = await runSlurpWorkflow(url, { signal: extra.signal });
 
         if (result.success && result.compiledFilePath) {
           // Construct the resource URI using the 'slurp' scheme
@@ -106,12 +121,89 @@ async function main() {
     }
   );
 
+
+  // --- New Tool for Reading Slurp Resources ---
+  server.tool(
+    'read_slurp_resource',
+    'Reads the content of a compiled Slurp resource file given its slurp:// URI.',
+    { // Schema for the tool
+      uri: z.string().describe("The slurp:// URI of the resource to read.")
+    },
+    async (args, extra) => {
+      const requestedUri = args.uri;
+      log.info(`Received read_slurp_resource request for URI: ${requestedUri}`);
+
+      const SLURP_SCHEME = 'slurp://';
+
+      if (typeof requestedUri !== 'string' || !requestedUri.startsWith(SLURP_SCHEME)) {
+        log.error(`Invalid or unsupported URI scheme for read_slurp_resource: ${requestedUri}`);
+        throw new McpError(ErrorCode.InvalidParams, `Invalid or unsupported URI scheme: ${requestedUri}. Must start with 'slurp://'.`);
+      }
+
+      // Extract relative path, remove scheme prefix
+      const relativePath = requestedUri.substring(SLURP_SCHEME.length);
+
+      // Basic path sanitization/validation
+      if (relativePath.includes('..') || path.isAbsolute(relativePath)) {
+          log.error(`Invalid path specified in URI: ${relativePath}`);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid path specified in URI: ${relativePath}`);
+      }
+
+      // Construct absolute path relative to the project root directory
+      const absolutePath = path.resolve(process.cwd(), relativePath);
+
+      // Security check: Ensure the resolved path is still within the project directory
+      if (!absolutePath.startsWith(process.cwd())) {
+           log.error(`Attempted to access path outside project directory: ${relativePath}`);
+           throw new McpError(ErrorCode.InvalidParams, `Attempted to access path outside project directory: ${relativePath}`);
+      }
+
+      try {
+        log.verbose(`Attempting to read file at: ${absolutePath}`);
+        const fileContent = await fs.readFile(absolutePath, { encoding: 'utf-8' });
+        log.success(`Successfully read file for URI: ${requestedUri}`);
+
+        // Return the content directly in the tool result
+        // Note: MCP Tools might display this as a simple string or within a structure.
+        // We'll return an object with a 'content' key for clarity.
+        return {
+          uri: requestedUri,
+          content: fileContent
+        };
+      } catch (error) {
+        if (error.code === 'ENOENT') {
+          log.error(`File not found for URI ${requestedUri} at path ${absolutePath}`);
+          throw new McpError(ErrorCode.NotFound, `Resource file not found: ${requestedUri}`); // Use NotFound code
+        } else {
+          log.error(`Error reading file for URI ${requestedUri}: ${error.message}`);
+          throw new McpError(ErrorCode.InternalError, `Server error reading resource file: ${error.message}`);
+        }
+      }
+    }
+  );
+
   // --- Resource Handler ---
 
   // ReadResourceRequestSchema is imported at the top now
 
-  server.resource(ReadResourceRequestSchema, async (request) => { // Try server.resource() for McpServer // Revert to setRequestHandler
-    const requestedUri = request.params.uri;
+  server.resource('slurp://{+path}', async (request) => { // Add URI template
+
+    let requestedUri;
+    // Check if params is an array (likely from mcp read-resource) or object (schema standard)
+    if (Array.isArray(request.params)) {
+      log.debug('Detected params as array, attempting to get URI from first element.');
+      requestedUri = request.params[0];
+    } else if (request.params && typeof request.params === 'object') {
+      log.debug('Detected params as object, attempting to get URI from params.uri.');
+      requestedUri = request.params.uri;
+    }
+
+    // Validate the extracted URI
+    if (typeof requestedUri !== 'string') {
+      log.error(`Resource handler failed: Could not extract valid URI string. Request params: ${JSON.stringify(request.params)}`);
+      throw new McpError(ErrorCode.InvalidParams, `Invalid request: URI parameter missing, not a string, or incorrect format.`);
+    }
+
     log.verbose(`Received resources/read request for URI: ${requestedUri}`);
 
     const SLURP_SCHEME = 'slurp://';
