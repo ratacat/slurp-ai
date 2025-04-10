@@ -300,19 +300,27 @@ describe('slurpWorkflow', () => {
 
        it('should call onProgress callback during scraping', async () => {
            const onProgressMock = vi.fn();
-           // Simulate progress event emission from the scraper mock
-           // We need to capture the callback passed to scraper.on
+           
+           // Capture the event handler without causing tests to break
            let progressCallback;
            mockScraperInstance.on.mockImplementation((event, callback) => {
                if (event === 'progress') {
-                  progressCallback = callback;
+                   progressCallback = callback;
                }
+               return mockScraperInstance; // Return for chaining
            });
 
            // Run the workflow, this will set up the listener
            const workflowPromise = runSlurpWorkflow(testUrl, { onProgress: onProgressMock });
-
+           
+           // Wait for the promise to settle enough that the callback is registered
+           await new Promise(resolve => setTimeout(resolve, 1));
+           
            // Now, simulate the scraper emitting events *after* the listener is attached
+           expect(mockScraperInstance.on).toHaveBeenCalledWith('progress', expect.any(Function));
+           
+           // Extract the callback from the on() mock call directly
+           progressCallback = mockScraperInstance.on.mock.calls.find(call => call[0] === 'progress')[1];
            expect(progressCallback).toBeDefined(); // Ensure the listener was set up
            progressCallback({ type: 'processing', url: 'url1' });
            progressCallback({ type: 'saved', url: 'url1', outputPath: 'path1' });
