@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "bin": {
-    "slurp": "./cli.js"
+    "slurp": "./src/cli.js"
   },
   "scripts": {
     "test": "vitest run"

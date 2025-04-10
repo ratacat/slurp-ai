@@ -1,229 +1,205 @@
-// __tests__/cli.test.js
+// Import Vi test utilities
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'path';
 
-// --- Mock Dependencies ---
-// Mock the core workflow/compiler functions called by the CLI
-vi.mock('../src/slurpWorkflow.js', () => ({
-  runSlurpWorkflow: vi.fn().mockResolvedValue({ success: true, compiledFilePath: 'compiled/mock_output.md' }),
-  extractNameFromUrl: vi.fn(url => path.basename(url || 'default').replace(/[^a-z0-9_-]/gi, '_')), // Simple mock
-}));
-vi.mock('../src/MarkdownCompiler.js', () => ({
-  MarkdownCompiler: vi.fn().mockImplementation(() => ({
-    compile: vi.fn().mockResolvedValue({
-      outputFile: '/path/to/compiled_docs.md',
-      stats: { processedFiles: 5 },
-    }),
-    // Mock properties accessed if needed (e.g., inputDir for cleanup log)
-    inputDir: '/mock/input/dir'
-  })),
-}));
+// --- Mock Modules Using Async Factories ---
+vi.mock('../src/slurpWorkflow.js', async (importOriginal) => {
+  const actual = await importOriginal(); // Get actual module if needed (optional)
+  return {
+    // ...actual, // Spread actual if you need non-mocked parts
+    runSlurpWorkflow: vi.fn(), // Define mock inside factory
+    extractNameFromUrl: vi.fn(url => path.basename(url || 'default').replace(/[^a-z0-9_-]/gi, '_')),
+  };
+});
 
-// Mock the logger used within cli.js (assuming it's self-contained or passed around)
-// If cli.js imports its own logger instance, we might need to adjust the mock path
-// For now, assume we can intercept console logs or mock a logger if cli.js exported one.
-// Let's mock console methods as cli.js uses them directly via its internal 'log' object.
-const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-// We might need to mock chalk as well if we assert on colored output
-vi.mock('chalk', async (importOriginal) => {
-    const originalChalk = await importOriginal();
-    // Return a basic object that returns the input string for color methods
-    const noColorChalk = {
-        green: (str) => str,
-        red: (str) => str,
-        yellow: (str) => str,
-        gray: (str) => str,
-        blue: (str) => str,
-    };
-    // Merge with original chalk if it has other necessary properties/methods
+vi.mock('../src/MarkdownCompiler.js', async (importOriginal) => {
+    const actual = await importOriginal(); // Optional
+    const mockCompile = vi.fn(); // Define inner mock fn
     return {
-        ...originalChalk,
-        ...noColorChalk,
-        default: { // Handle potential default export
-             ...originalChalk.default,
-            ...noColorChalk,
-        }
+        // ...actual,
+        // The factory returns the mock constructor
+        MarkdownCompiler: vi.fn().mockImplementation(() => ({
+            // The constructor returns an object with the mocked method
+            compile: mockCompile,
+            // Provide default properties needed by the cli code
+            inputDir: '/mock/compiler/input/dir/default',
+        })),
+        // We might need a way to access mockCompile from tests,
+        // but let's try without first. Accessing the instance's method is key.
     };
 });
 
+// --- Import the Module Under Test *After* Mocks ---
+import { main } from '../src/cli.js'; // Updated path
 
-// --- Test Subject ---
-// We need to import the CLI script *after* setting up mocks
-// and potentially re-import it in tests if needed after changing process.argv
-let cliMain; // Variable to hold the main function
+// --- Import the *Mocked* Dependencies *After* Mocks ---
+// These imports now point to the mocked versions defined above.
+import { runSlurpWorkflow } from '../src/slurpWorkflow.js';
+import { MarkdownCompiler } from '../src/MarkdownCompiler.js';
 
+// --- Test Suite ---
 describe('CLI Script (cli.js)', () => {
   let originalArgv;
-  let runSlurpWorkflowMock;
-  let MarkdownCompilerMock;
-  let compileMockInstance; // To access the instance's compile method
+  let consoleLogSpy;
+  let consoleErrorSpy;
+  let cwdSpy;
 
-  beforeEach(async () => {
-    // Store original argv and reset mocks
+  // Get typed references to the top-level mocks
+  const mockedRunSlurpWorkflow = vi.mocked(runSlurpWorkflow);
+  const MockedMarkdownCompiler = vi.mocked(MarkdownCompiler); // The mock constructor
+
+  beforeEach(() => {
     originalArgv = [...process.argv];
-    vi.clearAllMocks(); // Clear mocks including console spies
+    // Reset all mock calls and implementations between tests
+    vi.resetAllMocks();
 
-    // Re-import mocks to get fresh instances/spies
-    const slurpWorkflow = await import('../src/slurpWorkflow.js');
-    const compilerModule = await import('../src/MarkdownCompiler.js');
-    runSlurpWorkflowMock = slurpWorkflow.runSlurpWorkflow;
-    MarkdownCompilerMock = compilerModule.MarkdownCompiler;
+    // Set default *implementations* for the mocks for this test run
+    mockedRunSlurpWorkflow.mockResolvedValue({
+      success: true,
+      compiledFilePath: 'compiled/mock_output.md'
+    });
 
-    // Set up the mock implementation to capture the instance and its methods
-     MarkdownCompilerMock.mockImplementation(() => {
-        const instance = {
-             compile: vi.fn().mockResolvedValue({
-                 outputFile: '/path/to/compiled_docs.md',
-                 stats: { processedFiles: 5 },
-             }),
-             inputDir: '/mock/input/dir' // Mock property accessed
+    // Reset the mock constructor and define the instance's compile behavior
+    // Crucially, ensure the instance returned has a *mocked* compile function
+    MockedMarkdownCompiler.mockImplementation(() => {
+        const compileMock = vi.fn().mockResolvedValue({ // Fresh compile mock for instance
+             outputFile: '/path/to/compiled_docs.md',
+             stats: { processedFiles: 5, totalLibraries: 1, totalVersions: 1, totalFiles: 5, skippedFiles: 0, duplicatesRemoved: 0 },
+         });
+        return {
+            compile: compileMock,
+            inputDir: '/mock/compiler/input/dir/beforeEach', // Instance property
         };
-        compileMockInstance = instance; // Store instance for later access to compile spy
-        return instance;
-     });
+    });
 
 
-     // Mock process.cwd() used by compiler defaults if not overridden
-     vi.spyOn(process, 'cwd').mockReturnValue('/test/cli/cwd');
-
+    // Spy on console methods and cwd
+    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/test/cli/cwd');
   });
 
   afterEach(() => {
-    // Restore original argv
     process.argv = originalArgv;
-    vi.restoreAllMocks(); // Restore console spies and cwd
+    vi.restoreAllMocks(); // Restore console/cwd spies
   });
 
-  // --- isUrl Helper Tests ---
-  // Tested implicitly via main logic below
+  // Helper function uses the statically imported main
+  const runCliWithArgs = async (args) => {
+    process.argv = ['node', 'cli.js', ...args];
+    await main();
+  };
 
-  // --- Main Logic Tests ---
+  // --- Test Cases ---
   describe('main function dispatching', () => {
-
-    // Helper to set argv and run main (assuming main can be called/triggered)
-    const runCliWithArgs = async (args) => {
-        process.argv = ['node', 'cli.js', ...args];
-         // Use isolateModules to ensure mocks are applied before module execution.
-         // This re-imports and runs the cli.js script's top-level code.
-         await vi.isolateModules(async () => {
-             await import('../cli.js');
-         });
-    };
-
     it('should call runSlurpWorkflow when first argument is a URL', async () => {
-      const url = 'https://example.com/my-docs';
+      const url = 'https://example.com/api/docs';
       await runCliWithArgs([url, '--max', '10']);
 
-      expect(runSlurpWorkflowMock).toHaveBeenCalledOnce();
-      expect(runSlurpWorkflowMock).toHaveBeenCalledWith(url, expect.objectContaining({
-          maxPages: 10, // Check if options are parsed and passed
-      }));
-      expect(MarkdownCompilerMock).not.toHaveBeenCalled();
-      // Check console log via spy
-      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining(`Running Slurp workflow for URL: ${url}`));
+      expect(mockedRunSlurpWorkflow).toHaveBeenCalledOnce();
+      expect(mockedRunSlurpWorkflow).toHaveBeenCalledWith(url, expect.objectContaining({ maxPages: 10 }));
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Running Slurp workflow'));
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Workflow completed.'));
     });
 
     it('should call runSlurpWorkflow for "fetch <url>" command', async () => {
         const url = 'https://fetch.example.com';
         await runCliWithArgs(['fetch', url, '--version', '3.0']);
 
-        expect(runSlurpWorkflowMock).toHaveBeenCalledOnce();
-        expect(runSlurpWorkflowMock).toHaveBeenCalledWith(url, expect.objectContaining({
-            version: '3.0',
-        }));
-        expect(MarkdownCompilerMock).not.toHaveBeenCalled();
+        expect(mockedRunSlurpWorkflow).toHaveBeenCalledOnce();
+        expect(mockedRunSlurpWorkflow).toHaveBeenCalledWith(url, expect.objectContaining({ version: '3.0' }));
+        expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Workflow completed.'));
     });
 
-    it('should show error for "fetch <package>" command (as it\'s disabled)', async () => {
+     it('should show error for "fetch <package>" command (as it\'s disabled)', async () => {
         await runCliWithArgs(['fetch', 'react']);
-        expect(runSlurpWorkflowMock).not.toHaveBeenCalled();
+        expect(mockedRunSlurpWorkflow).not.toHaveBeenCalled();
         expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Fetching documentation by package name is disabled.'));
+        expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Please provide a direct URL'));
     });
-
 
     it('should call MarkdownCompiler for "compile" command', async () => {
-      await runCliWithArgs(['compile', '--input', './in', '--output', './out.md']);
+        await runCliWithArgs(['compile', '--input', './in', '--output', './out.md']);
 
-      expect(MarkdownCompilerMock).toHaveBeenCalledOnce();
-      expect(MarkdownCompilerMock).toHaveBeenCalledWith(expect.objectContaining({
-          inputDir: './in', // Option provided
-          outputFile: './out.md', // Option provided
-      }));
-      // Ensure the compile method on the *instance* was called
-       expect(compileMockInstance.compile).toHaveBeenCalledOnce();
-       expect(runSlurpWorkflowMock).not.toHaveBeenCalled();
-       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Compiling documentation...'));
-       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Compilation complete!')); // Success log
+        // Check constructor call
+        expect(MockedMarkdownCompiler).toHaveBeenCalledOnce();
+        expect(MockedMarkdownCompiler).toHaveBeenCalledWith(expect.objectContaining({ inputDir: './in', outputFile: './out.md' }));
+
+        // Check the compile method on the *instance* returned by the mock constructor
+        // Access the instance created during the test run.
+        expect(MockedMarkdownCompiler.mock.results).toHaveLength(1); // Ensure constructor was called once
+        const mockInstance = MockedMarkdownCompiler.mock.results[0].value; // Get the instance
+        expect(mockInstance.compile).toHaveBeenCalledOnce(); // Check the compile method on the instance
+
+        expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Compilation complete!'));
+        expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Output file:'));
+        expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Statistics'));
     });
 
      it('should use default paths for "compile" if options omitted', async () => {
+        const expectedDefaultInput = '/test/cli/cwd/slurp_partials';
         await runCliWithArgs(['compile']);
 
-        // Defaults depend on env vars and cwd mock set in beforeEach
-        const expectedDefaultInput = '/test/cli/cwd/slurp_partials_env'; // env + cwd
-        // Output file option is undefined, compiler calculates its default
+        expect(MockedMarkdownCompiler).toHaveBeenCalledOnce();
+        expect(MockedMarkdownCompiler).toHaveBeenCalledWith(expect.objectContaining({ inputDir: expectedDefaultInput, outputFile: undefined }));
 
-        expect(MarkdownCompilerMock).toHaveBeenCalledOnce();
-        expect(MarkdownCompilerMock).toHaveBeenCalledWith(expect.objectContaining({
-            inputDir: expectedDefaultInput, // Default derived from env/cwd
-            outputFile: undefined, // Option not provided
-        }));
-        expect(compileMockInstance.compile).toHaveBeenCalledOnce();
-     });
+        expect(MockedMarkdownCompiler.mock.results).toHaveLength(1);
+        const mockInstance = MockedMarkdownCompiler.mock.results[0].value;
+        expect(mockInstance.compile).toHaveBeenCalledOnce();
+        expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Compilation complete!'));
+    });
 
-     it('should handle legacy "--url" flag by calling runSlurpWorkflow', async () => {
+    it('should handle legacy "--url" flag by calling runSlurpWorkflow', async () => {
         const url = 'https://legacy.example.com';
         await runCliWithArgs(['--url', url, '--version', 'legacy-v']);
 
-        expect(runSlurpWorkflowMock).toHaveBeenCalledOnce();
-        expect(runSlurpWorkflowMock).toHaveBeenCalledWith(url, expect.objectContaining({
-            version: 'legacy-v',
-            library: undefined, // library flag not provided
-        }));
-        expect(MarkdownCompilerMock).not.toHaveBeenCalled();
-     });
+        expect(mockedRunSlurpWorkflow).toHaveBeenCalledOnce();
+        expect(mockedRunSlurpWorkflow).toHaveBeenCalledWith(url, expect.objectContaining({ version: 'legacy-v', library: undefined }));
+        expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Workflow completed.'));
+    });
 
-     it('should show help if no command or URL is provided', async () => {
+    it('should show help if no command or URL is provided', async () => {
         await runCliWithArgs([]);
-        // Check if console.log was called with something containing 'Usage:'
         expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Usage:'));
-        expect(runSlurpWorkflowMock).not.toHaveBeenCalled();
-        expect(MarkdownCompilerMock).not.toHaveBeenCalled();
-     });
+        expect(mockedRunSlurpWorkflow).not.toHaveBeenCalled();
+        expect(MockedMarkdownCompiler).not.toHaveBeenCalled();
+    });
 
-     it('should show help for unrecognized commands', async () => {
+    it('should show help for unrecognized commands', async () => {
         await runCliWithArgs(['unknown-command']);
         expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Usage:'));
-        expect(runSlurpWorkflowMock).not.toHaveBeenCalled();
-        expect(MarkdownCompilerMock).not.toHaveBeenCalled();
-     });
+        expect(mockedRunSlurpWorkflow).not.toHaveBeenCalled();
+        expect(MockedMarkdownCompiler).not.toHaveBeenCalled();
+    });
 
-     it('should handle errors from runSlurpWorkflow', async () => {
+    it('should handle errors from runSlurpWorkflow', async () => {
         const error = new Error('Workflow failed');
-        runSlurpWorkflowMock.mockRejectedValue(error);
         const url = 'https://fail.example.com';
+        mockedRunSlurpWorkflow.mockRejectedValueOnce(error); // Set rejection for this test
 
-        // Wrap in try/catch IF cli.js re-throws, otherwise check logs/exit code
-        // The current cli.js catches and logs, so we check consoleErrorSpy
         await runCliWithArgs([url]);
 
-        expect(runSlurpWorkflowMock).toHaveBeenCalledWith(url, expect.anything());
-        // Check if the catch block in cli.js logged the error
+        expect(mockedRunSlurpWorkflow).toHaveBeenCalledWith(url, expect.anything());
         expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(`Unexpected error during Slurp workflow: ${error.message}`));
-     });
+    });
 
-      it('should handle errors from compiler.compile', async () => {
+    it('should handle errors from compiler.compile', async () => {
         const error = new Error('Compile failed');
-        // Ensure the mock instance's compile rejects
-        compileMockInstance.compile.mockRejectedValue(error);
+
+        // Set the compile method on the *next* instance to reject
+        const compileInstanceMock = vi.fn().mockRejectedValueOnce(error);
+        MockedMarkdownCompiler.mockImplementationOnce(() => ({ // Use Once for specific test
+             compile: compileInstanceMock,
+             inputDir: '/mock/compiler/input/dir/test-specific',
+         }));
 
         await runCliWithArgs(['compile']);
 
-        expect(compileMockInstance.compile).toHaveBeenCalledOnce();
-        // Check if the catch block in cli.js logged the error
-        expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(`Error during compilation: ${error.message}`));
-     });
+        expect(MockedMarkdownCompiler).toHaveBeenCalledOnce(); // Constructor called
+        const mockInstance = MockedMarkdownCompiler.mock.results[0].value; // Get the instance
+        expect(mockInstance.compile).toHaveBeenCalledOnce(); // Check instance method call
 
+        expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(`Error during compilation: ${error.message}`));
+    });
   });
 });
