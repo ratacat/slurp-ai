@@ -6,7 +6,7 @@
     "slurp": "./cli.js"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run"
   },
   "keywords": [],
   "author": "",
@@ -26,5 +26,8 @@
     "puppeteer": "^24.4.0",
     "turndown": "^7.2.0",
     "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "vitest": "^3.1.1"
   }
 }
