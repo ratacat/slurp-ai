@@ -80,6 +80,7 @@ function extractNameFromUrl(url) {
  * @param {string} url - The starting URL to scrape.
  * @param {object} [options={}] - Configuration options.
  * @param {string} [options.version] - Optional version string to include in paths.
+ * @param {string} [options.basePath] - URL prefix required for scraped links (if SLURP_ENFORCE_BASE_PATH=true). Defaults to the start URL if omitted.
  * @param {string} [options.partialsOutputDir] - Base directory for intermediate partial files. Defaults to env SLURP_PARTIALS_DIR or './slurp_partials'.
  * @param {string} [options.compiledOutputDir] - Directory for the final compiled file. Defaults to env SLURP_COMPILED_DIR or './compiled'.
  * @param {number} [options.maxPages=20] - Maximum pages to scrape. Defaults to env SLURP_MAX_PAGES_PER_SITE or 20.
@@ -148,7 +149,9 @@ async function runSlurpWorkflow(url, options = {}) {
 
     // --- Configure Scraper ---
     const scrapeConfig = {
-      baseUrl: url,
+      baseUrl: url, // The actual starting point for scraping
+      basePath: options.basePath || url, // The path prefix for filtering (defaults to start URL)
+      enforceBasePath: process.env.SLURP_ENFORCE_BASE_PATH === 'true', // Read directly from env here
       outputDir: structuredPartialsDir,
       maxPages: options.maxPages ?? parseInt(process.env.SLURP_MAX_PAGES_PER_SITE || '20', 10),
       useHeadless: options.useHeadless ?? true,

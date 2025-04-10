@@ -1,4 +1,4 @@
-#!/usr/bin/env node --no-warnings
+#!/usr/bin/env node
 
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -102,6 +102,8 @@ async function main() {
       concurrency: params.concurrency ? parseInt(params.concurrency, 10) : undefined,
       retryCount: params['retry-count'] ? parseInt(params['retry-count'], 10) : undefined,
       retryDelay: params['retry-delay'] ? parseInt(params['retry-delay'], 10) : undefined,
+      // Add base path handling
+      basePath: params['base-path'] || url, // Default to url if --base-path is not provided
       // Compilation options can also be passed if needed, or rely on env vars within the workflow
       // preserveMetadata: ...,
       // removeNavigation: ...,
@@ -176,6 +178,8 @@ async function main() {
           concurrency: params.concurrency ? parseInt(params.concurrency, 10) : undefined,
           retryCount: params['retry-count'] ? parseInt(params['retry-count'], 10) : undefined,
           retryDelay: params['retry-delay'] ? parseInt(params['retry-delay'], 10) : undefined,
+          // Add base path handling
+          basePath: params['base-path'] || fetchArg, // Default to fetchArg (the url) if --base-path is not provided
         };
         const result = await runSlurpWorkflow(fetchArg, { ...generalWorkflowOptions, ...fetchOptions }); // Combine general and fetch-specific options
         if (result && result.success) {
@@ -269,7 +273,9 @@ async function main() {
         // Use runSlurpWorkflow instead of scrapeFromUrl
         const legacyOptions = {
           library: params.library,
-          version: params.version
+          version: params.version,
+          // Add base path handling
+          basePath: params['base-path'] || params.url, // Default to params.url if --base-path is not provided
         };
         log.debug(`LEGACY MODE - ABOUT TO CALL: runSlurpWorkflow(${params.url}, ${JSON.stringify(legacyOptions)})`);
         const result = await runSlurpWorkflow(params.url, legacyOptions);
@@ -296,8 +302,6 @@ function isUrl(str) {
   }
 }
 
-
-      // Move this debug log INSIDE main(), before the legacy check, so log is always defined
 /**
  * Wait for user input
  * @returns {Promise<string>} User input
@@ -357,8 +361,9 @@ Options:
   --concurrency <number>   Number of concurrent pages (default: 5)
   --retry-count <number>   Number of retries for failed requests (default: 3)
   --retry-delay <number>   Delay between retries in ms (default: 1000)
+  --base-path <url>        URL prefix required for scraped links (if SLURP_ENFORCE_BASE_PATH=true). Defaults to start URL.
   --yes                    Skip confirmation prompts
-  
+
 Compile Options:
   --input <dir>            Input directory for compiler (default: ./slurp_partials or SLURP_INPUT_DIR)
   --output <file>          Output file for compiler (default: ./slurp_compiled/compiled_docs.md)
@@ -371,8 +376,16 @@ Compile Options:
 // Export the main function for testing purposes
 export { main };
 
-// Only execute main if this file is run directly, not if it's imported
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch(console.error);
+// Modified entry point check to work with npm link
+// We want to run main() if:
+// 1. This is the main module (directly executed), OR
+// 2. This is being run via the 'slurp' binary (process.argv[0] contains 'node' and process.argv[1] ends with 'slurp')
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+const isRunViaSlurpBinary = process.argv[0].includes('node') && 
+                           (process.argv[1].endsWith('slurp') || process.argv[1].endsWith('slurpai'));
+
+if (isMainModule || isRunViaSlurpBinary) {
+  main().catch(err => {
+    console.error(err);
+  });
 }
-// Removed unconditional main() call to prevent execution on import

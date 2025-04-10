@@ -390,8 +390,15 @@ describe('DocsToMarkdown', () => {
       });
     });
     
-    it('should handle absolute URLs within the allowed domain', () => {
-       expect(scraper.preprocessUrl(absoluteSameDomain, sourceUrl)).toBe(absoluteSameDomain);
+    it('should handle absolute URLs within the allowed domain *when matching basePath*', () => {
+       // Re-initialize scraper for this specific test with a matching basePath
+       const scraperWithBasePath = new DocsToMarkdown({
+         baseUrl: 'https://example.com/docs/v1/',
+         basePath: 'https://example.com/docs/v1/', // Provide matching base path
+         allowedDomains: ['example.com'],
+         enforceBasePath: true, // Keep enforcement on
+       });
+       expect(scraperWithBasePath.preprocessUrl(absoluteSameDomain, sourceUrl)).toBe(absoluteSameDomain);
     });
     
     it('should reject URLs from different domains when enforceBasePath is true', () => {
@@ -469,6 +476,66 @@ describe('DocsToMarkdown', () => {
     it('should return null for invalid URLs', () => {
         expect(scraper.preprocessUrl('javascript:void(0)', sourceUrl)).toBeNull();
     });
+
+
+    // --- Base Path Enforcement Tests ---
+    it('should allow URL if it starts with basePath when enforceBasePath=true', () => {
+      const scraper = new DocsToMarkdown({
+        baseUrl: 'https://example.com/docs/',
+        basePath: 'https://example.com/docs/', // Explicit basePath
+        allowedDomains: ['example.com'],
+        enforceBasePath: true,
+      });
+      const urlToTest = 'https://example.com/docs/section/page';
+      expect(scraper.preprocessUrl(urlToTest, scraper.baseUrl)).toBe(urlToTest);
+    });
+
+    it('should reject URL if it does not start with basePath when enforceBasePath=true', () => {
+      const scraper = new DocsToMarkdown({
+        baseUrl: 'https://example.com/docs/',
+        basePath: 'https://example.com/docs/', // Explicit basePath
+        allowedDomains: ['example.com'],
+        enforceBasePath: true,
+      });
+      const urlToTest = 'https://example.com/other/page'; // Same domain, different path
+      expect(scraper.preprocessUrl(urlToTest, scraper.baseUrl)).toBeNull();
+    });
+
+    it('should allow URL if it starts with startUrl when enforceBasePath=true and basePath is omitted', () => {
+      // Note: cli.js sets options.basePath = options.baseUrl if omitted
+      const scraper = new DocsToMarkdown({
+        baseUrl: 'https://example.com/start/here/',
+        basePath: 'https://example.com/start/here/', // Simulating CLI default
+        allowedDomains: ['example.com'],
+        enforceBasePath: true,
+      });
+      const urlToTest = 'https://example.com/start/here/page';
+      expect(scraper.preprocessUrl(urlToTest, scraper.baseUrl)).toBe(urlToTest);
+    });
+
+    it('should reject URL if it does not start with startUrl when enforceBasePath=true and basePath is omitted', () => {
+      // Note: cli.js sets options.basePath = options.baseUrl if omitted
+      const scraper = new DocsToMarkdown({
+        baseUrl: 'https://example.com/start/here/',
+        basePath: 'https://example.com/start/here/', // Simulating CLI default
+        allowedDomains: ['example.com'],
+        enforceBasePath: true,
+      });
+      const urlToTest = 'https://example.com/start/elsewhere/page';
+      expect(scraper.preprocessUrl(urlToTest, scraper.baseUrl)).toBeNull();
+    });
+
+    it('should allow URL even if it does not start with basePath when enforceBasePath=false', () => {
+      const scraper = new DocsToMarkdown({
+        baseUrl: 'https://example.com/docs/',
+        basePath: 'https://example.com/docs/',
+        allowedDomains: ['example.com'],
+        enforceBasePath: false, // Enforcement OFF
+      });
+      const urlToTest = 'https://example.com/other/page'; // Should be allowed now
+      expect(scraper.preprocessUrl(urlToTest, scraper.baseUrl)).toBe(urlToTest);
+    });
+
   });
 
   // --- extractLinks Tests ---

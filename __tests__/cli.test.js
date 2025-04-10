@@ -1,6 +1,7 @@
 // Import Vi test utilities
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'path';
+import { execSync } from 'child_process';
 
 // --- Mock Modules Using Async Factories ---
 vi.mock('../src/slurpWorkflow.js', async (importOriginal) => {
@@ -102,6 +103,24 @@ describe('CLI Script (cli.js)', () => {
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Workflow completed.'));
     });
 
+    it('should pass basePath correctly in direct URL mode when --base-path is provided', async () => {
+      const url = 'https://example.com/start';
+      const basePath = 'https://example.com/';
+      await runCliWithArgs([url, '--base-path', basePath]);
+
+      expect(mockedRunSlurpWorkflow).toHaveBeenCalledOnce();
+      expect(mockedRunSlurpWorkflow).toHaveBeenCalledWith(url, expect.objectContaining({ basePath: basePath }));
+    });
+
+    it('should default basePath to start URL in direct URL mode when --base-path is omitted', async () => {
+      const url = 'https://example.com/start/here';
+      await runCliWithArgs([url]);
+
+      expect(mockedRunSlurpWorkflow).toHaveBeenCalledOnce();
+      expect(mockedRunSlurpWorkflow).toHaveBeenCalledWith(url, expect.objectContaining({ basePath: url }));
+    });
+
+
     it('should call runSlurpWorkflow for "fetch <url>" command', async () => {
         const url = 'https://fetch.example.com';
         await runCliWithArgs(['fetch', url, '--version', '3.0']);
@@ -110,6 +129,24 @@ describe('CLI Script (cli.js)', () => {
         expect(mockedRunSlurpWorkflow).toHaveBeenCalledWith(url, expect.objectContaining({ version: '3.0' }));
         expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Workflow completed.'));
     });
+
+    it('should pass basePath correctly in fetch command mode when --base-path is provided', async () => {
+      const url = 'https://fetch.example.com/go';
+      const basePath = 'https://fetch.example.com/';
+      await runCliWithArgs(['fetch', url, '--base-path', basePath]);
+
+      expect(mockedRunSlurpWorkflow).toHaveBeenCalledOnce();
+      expect(mockedRunSlurpWorkflow).toHaveBeenCalledWith(url, expect.objectContaining({ basePath: basePath }));
+    });
+
+    it('should default basePath to fetch URL in fetch command mode when --base-path is omitted', async () => {
+      const url = 'https://fetch.example.com/go/deep';
+      await runCliWithArgs(['fetch', url]);
+
+      expect(mockedRunSlurpWorkflow).toHaveBeenCalledOnce();
+      expect(mockedRunSlurpWorkflow).toHaveBeenCalledWith(url, expect.objectContaining({ basePath: url }));
+    });
+
 
      it('should show error for "fetch <package>" command (as it\'s disabled)', async () => {
         await runCliWithArgs(['fetch', 'react']);
@@ -157,6 +194,55 @@ describe('CLI Script (cli.js)', () => {
         expect(mockedRunSlurpWorkflow).toHaveBeenCalledWith(url, expect.objectContaining({ version: 'legacy-v', library: undefined }));
         expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Workflow completed.'));
     });
+
+    it('should pass basePath correctly in legacy mode when --base-path is provided', async () => {
+      const url = 'https://legacy.example.com/old';
+      const basePath = 'https://legacy.example.com/';
+      await runCliWithArgs(['--url', url, '--base-path', basePath]);
+
+      expect(mockedRunSlurpWorkflow).toHaveBeenCalledOnce();
+      expect(mockedRunSlurpWorkflow).toHaveBeenCalledWith(url, expect.objectContaining({ basePath: basePath }));
+    });
+
+
+  // --- Smoke Test for Alias --- 
+  // Note: This assumes 'npm link' has been run previously in the environment
+  describe('slurp command alias (smoke test)', () => {
+    it('should execute slurp --help without errors and show usage', () => {
+      let output = '';
+      let stderrOutput = '';
+      let error = null;
+
+      try {
+        // Execute the globally linked command
+        // Capture both stdout and stderr
+        output = execSync('slurp --help', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }); // Pipe stdin, stdout, stderr
+      } catch (e) {
+        error = e;
+        // Log the error if the command fails, useful for debugging CI/setup issues
+        console.error('Smoke test failed to execute `slurp --help`:', e);
+        // Capture output even on error
+        output = e.stdout || '';
+        stderrOutput = e.stderr || '';
+      }
+
+      // Assertions
+      expect(error, `The slurp command should execute without throwing an error. Check \`npm link\`. Stderr: ${stderrOutput}`).toBeNull();
+      expect(output).toContain('Usage:');
+      expect(output).toContain('slurp <command> [arguments] [options]');
+      expect(output).toContain('--base-path <url>'); // Verify the new flag is in help
+    });
+  });
+
+
+    it('should default basePath to legacy URL in legacy mode when --base-path is omitted', async () => {
+      const url = 'https://legacy.example.com/old/stuff';
+      await runCliWithArgs(['--url', url]);
+
+      expect(mockedRunSlurpWorkflow).toHaveBeenCalledOnce();
+      expect(mockedRunSlurpWorkflow).toHaveBeenCalledWith(url, expect.objectContaining({ basePath: url }));
+    });
+
 
     it('should show help if no command or URL is provided', async () => {
         await runCliWithArgs([]);

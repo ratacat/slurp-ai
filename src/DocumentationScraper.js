@@ -58,10 +58,10 @@ class DocsToMarkdown extends EventEmitter {
       options.useHeadless :
       (process.env.SLURP_USE_HEADLESS !== 'false');
     
-    this.baseUrlPath = this.baseUrlObj.pathname;
+    // this.baseUrlPath = this.baseUrlObj.pathname; // Removed - logic now uses full basePath string
     this.enforceBasePath = options.enforceBasePath !== undefined ?
       options.enforceBasePath :
-      (process.env.SLURP_ENFORCE_BASE_PATH !== 'false');
+      (process.env.SLURP_ENFORCE_BASE_PATH === 'true'); // Explicitly check for 'true'
     
     this.urlBlacklist = options.urlBlacklist || [
       // Common non-documentation pages
@@ -704,13 +704,17 @@ class DocsToMarkdown extends EventEmitter {
         // console.log(`Skipping URL ${url} - domain not allowed`);
         return null;
       }
-      
-      if (this.enforceBasePath && this.baseUrlPath && this.baseUrlPath !== '/') {
-        if (!urlObj.pathname.startsWith(this.baseUrlPath)) {
-          // console.log(`Skipping URL ${url} - doesn't match base path ${this.baseUrlPath}`);
+
+      // Add the new base path enforcement logic here
+      if (this.enforceBasePath) {
+        const urlString = urlObj.toString(); // Use the normalized URL
+        if (!urlString.startsWith(this.basePath)) {
+          log.debug(`Skipping URL ${urlString} - doesn't start with enforced base path ${this.basePath}`);
           return null;
         }
       }
+      
+      // Removed old enforceBasePath check block that used baseUrlPath
       
       const path = urlObj.pathname.toLowerCase();
       for (const pattern of this.urlBlacklist) {
