@@ -8,6 +8,7 @@ import fs from 'fs-extra';
 import chalk from 'chalk';
 import { runSlurpWorkflow } from './slurpWorkflow.js'; // Adjusted path
 import { MarkdownCompiler } from './MarkdownCompiler.js'; // Adjusted path
+import { log } from './utils/logger.js';
 
 // Define __dirname equivalent for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -38,13 +39,20 @@ async function main() {
   for (let i = 0; i < rawArgs.length; i++) {
     const arg = rawArgs[i];
     if (arg.startsWith('--')) {
-      const key = arg.slice(2);
-      // Check if next arg exists and is a value (doesn't start with --)
-      if (i + 1 < rawArgs.length && !rawArgs[i + 1].startsWith('--')) {
-        params[key] = rawArgs[i + 1];
-        i++; // Skip the value argument
+      // Handle both --flag value and --flag=value formats
+      if (arg.includes('=')) {
+        // Format: --flag=value
+        const [flag, value] = arg.slice(2).split('=', 2);
+        params[flag] = value;
       } else {
-        params[key] = true; // Flag without value
+        const key = arg.slice(2);
+        // Check if next arg exists and is a value (doesn't start with --)
+        if (i + 1 < rawArgs.length && !rawArgs[i + 1].startsWith('--')) {
+          params[key] = rawArgs[i + 1];
+          i++; // Skip the value argument
+        } else {
+          params[key] = true; // Flag without value
+        }
       }
     } else {
       // Treat as command or positional argument
@@ -57,43 +65,13 @@ async function main() {
   }
   // --- End Argument Parsing ---
 
-  const log = {
-    info: (message) => console.log(message),
-    success: (message) => console.log(chalk.green(`✅ ${message}`)),
-    error: (message) => console.error(chalk.red(`❌ ${message}`)),
-    warn: (message) => console.log(chalk.yellow(`⚠️ ${message}`)),
-    verbose: (message) => {
-      if (verbose || params.verbose) {
-        console.log(chalk.gray(`[INFO] ${message}`));
-      }
-    },
-    progress: (message, force = false) => {
-      if (force || verbose || params.verbose) {
-        console.log(chalk.blue(`[PROGRESS] ${message}`));
-      }
-    },
-    summary: (title, items) => {
-      console.log(`\n${title}:`);
-      for (const [key, value] of Object.entries(items)) {
-        console.log(`${key}: ${value}`);
-      }
-    },
-    debug: (message) => {
-      const debugMsg = `[DEBUG] ${message}`;
-      process.stdout.write(debugMsg + '\n');
-    }
-  };
+  // Local log object removed - using centralized logger from utils/logger.js
 
-  log.debug(`COMMAND: ${command || '(none)'}`);
-  log.debug(`PARAMS: ${JSON.stringify(params, null, 2)}`);
-  // log.debug(`RAW ARGS: ${JSON.stringify(rawArgs, null, 2)}`); // Removed as redundant
-  log.debug(`POSITIONAL ARGS: ${JSON.stringify(positionalArgs, null, 2)}`);
+  // Debug logs removed - use --verbose flag if debugging needed
   
   // Check for direct URL mode first (before entering the switch)
   if (command && isUrl(command)) {
     const url = command;
-    log.info(`Running Slurp workflow for URL: ${url}`);
-
     // Prepare options for the workflow function based on CLI params
     const workflowOptions = {
       // Pass relevant options parsed from 'params' object
@@ -104,31 +82,31 @@ async function main() {
       retryDelay: params['retry-delay'] ? parseInt(params['retry-delay'], 10) : undefined,
       // Add base path handling
       basePath: params['base-path'] || url, // Default to url if --base-path is not provided
-      // Compilation options can also be passed if needed, or rely on env vars within the workflow
-      // preserveMetadata: ...,
-      // removeNavigation: ...,
-      // removeDuplicates: ...,
-      // deletePartials: ...,
-      // Note: output paths are handled within runSlurpWorkflow based on env/defaults
     };
+
+    log.start('Init', `Starting Slurp for: ${url}`);
+    log.info(`   Base Path Filter: ${workflowOptions.basePath || 'None'}`);
+
+    // Compilation options can also be passed if needed, or rely on env vars within the workflow
+    // preserveMetadata: ...,
+    // removeNavigation: ...,
+    // removeDuplicates: ...,
+    // deletePartials: ...,
+    // Note: output paths are handled within runSlurpWorkflow based on env/defaults
     // [LEGACY DEBUG] log removed
     try {
-      log.debug(`ABOUT TO CALL: runSlurpWorkflow(${url}, ${JSON.stringify(workflowOptions)})`);
+      // Debug logs removed
       const result = await runSlurpWorkflow(url, workflowOptions);
-      log.debug(`runSlurpWorkflow RESULT: ${JSON.stringify(result)}`);
-      if (result.success) {
-        log.success(`Workflow completed. Compiled file: ${result.compiledFilePath}`);
-      } else {
-        // Error already logged within runSlurpWorkflow
-        log.error('Slurp workflow failed.');
+      // Success/failure logs now handled by slurpWorkflow.js
+      if (!result.success) {
         // Optionally set a non-zero exit code
         process.exitCode = 1;
       }
     } catch (error) {
       // Catch any unexpected errors from the workflow function itself
-      log.error(`Unexpected error during Slurp workflow: ${error.message}`);
+      log.error('Workflow', `Unexpected error during Slurp workflow: ${error.message}`);
       if (error.stack) {
-          log.verbose(error.stack);
+          log.verbose(`Stack trace: ${error.stack}`);
       }
       process.exitCode = 1;
     }
@@ -143,12 +121,12 @@ async function main() {
       const readVersion = positionalArgs[1]; // Optional
       
       if (!readPackage) {
-        log.error('Missing package name. Usage: slurp read <package> [version]');
+        log.error('CLI', 'Missing package name. Usage: slurp read <package> [version]');
         return;
       }
       
       // Read local documentation implementation
-      log.info(`Reading local documentation for ${readPackage}${readVersion ? `@${readVersion}` : ''}`);
+      log.start('Read', `Reading local documentation for ${readPackage}${readVersion ? `@${readVersion}` : ''}`);
       // TODO: Implement reading from local documentation
       break;
       
@@ -158,7 +136,7 @@ async function main() {
       // Version should come from params.version (parsed from --version flag)
       
       if (!fetchArg) {
-        log.error('Missing URL. Usage: slurp fetch <url> [--version <version>]');
+        log.error('CLI', 'Missing URL. Usage: slurp fetch <url> [--version <version>]');
         return;
       }
       
@@ -170,7 +148,7 @@ async function main() {
         const fetchOptions = {
           version: params.version // Will be undefined if not passed
         };
-        log.debug(`ABOUT TO CALL: runSlurpWorkflow(${fetchArg}, ${JSON.stringify(fetchOptions)})`);
+        // Debug log removed
         // Prepare general workflow options based on params (similar to direct URL mode)
         const generalWorkflowOptions = {
           maxPages: params.max ? parseInt(params.max, 10) : undefined,
@@ -182,20 +160,17 @@ async function main() {
           basePath: params['base-path'] || fetchArg, // Default to fetchArg (the url) if --base-path is not provided
         };
         const result = await runSlurpWorkflow(fetchArg, { ...generalWorkflowOptions, ...fetchOptions }); // Combine general and fetch-specific options
-        if (result && result.success) {
-          log.success(`Workflow completed.`);
-        }
+        // Success message now handled by slurpWorkflow.js
       } else {
         // Package name provided, but package fetching via DocSlurper is removed.
-        log.error('Fetching documentation by package name is disabled.');
-        log.info('Please provide a direct URL using `slurp <url>` or `slurp fetch <url>`.');
-        log.info('Please provide a direct URL using `slurp <url>` or `slurp fetch <url>`.');
+        log.error('CLI', 'Fetching documentation by package name is disabled.');
+        log.info('   Please provide a direct URL using `slurp <url>` or `slurp fetch <url>`.');
       }
       break;
       
     case 'compile':
       // Compile documentation: slurp compile [options]
-      log.info('Compiling documentation...');
+      log.start('Compile', 'Compiling documentation...');
       
       // Parse compile-specific options
       const compileOptions = {
@@ -214,55 +189,22 @@ async function main() {
         try {
           compileOptions.excludePatterns = JSON.parse(params.exclude).map(pattern => new RegExp(pattern, 'gi'));
         } catch (error) {
-          log.error(`Error parsing exclude patterns: ${error.message}`);
+          log.error('Compile', `Error parsing exclude patterns: ${error.message}`);
           return;
         }
       }
       
       try {
         // Create compiler instance
-        log.debug(`ABOUT TO CREATE: new MarkdownCompiler(${JSON.stringify(compileOptions)})`);
+        // Debug logs removed
         const compiler = new MarkdownCompiler(compileOptions);
         
         // Run compilation
-        log.debug(`ABOUT TO CALL: compiler.compile()`);
         const result = await compiler.compile();
-        log.debug(`compile RESULT: ${JSON.stringify(result)}`);
         
-        // Display results
-        log.success('Compilation complete!');
-        log.info(`Output file: ${path.relative(process.cwd(), result.outputFile)}`);
-        
-        log.summary('Statistics', {
-          'Libraries processed': result.stats.totalLibraries,
-          'Versions processed': result.stats.totalVersions,
-          'Total files found': result.stats.totalFiles,
-          'Files processed': result.stats.processedFiles,
-          'Files skipped': result.stats.skippedFiles,
-          'Duplicates removed': result.stats.duplicatesRemoved
-        });
-        
-        // Check if any files were processed
-        if (result.stats.processedFiles === 0) {
-          log.warn('No files were processed. This could be because:');
-          log.info('- The input directory is empty');
-          log.info('- No markdown files were found');
-          log.info('- All files were filtered out as duplicates');
-          log.info('\nCheck your input directory and try again.');
-        } else {
-          log.success(`Successfully compiled ${result.stats.processedFiles} files into ${path.relative(process.cwd(), result.outputFile)}`);
-
-          // Cleanup partials if enabled
-          const deletePartials = process.env.SLURP_DELETE_PARTIALS !== 'false'; // Default true
-          const finalInputDir = compiler.inputDir; // Get the actual input dir used by compiler
-          if (deletePartials && result.stats.processedFiles > 0) {
-             log.verbose(`Deleting partials directory: ${finalInputDir}`);
-             await fs.remove(finalInputDir);
-             log.verbose(`Partials directory deleted.`);
-          }
-        }
+        // Most output details now handled by slurpWorkflow.js
       } catch (error) {
-        log.error(`Error during compilation: ${error.message}`);
+        log.error('Compile', `Error during compilation: ${error.message}`);
       }
       break;
       
@@ -277,11 +219,9 @@ async function main() {
           // Add base path handling
           basePath: params['base-path'] || params.url, // Default to params.url if --base-path is not provided
         };
-        log.debug(`LEGACY MODE - ABOUT TO CALL: runSlurpWorkflow(${params.url}, ${JSON.stringify(legacyOptions)})`);
+        // Debug log removed
         const result = await runSlurpWorkflow(params.url, legacyOptions);
-        if (result && result.success) {
-          log.success('Workflow completed.');
-        }
+        // Success message now handled by slurpWorkflow.js
       } else { // If no recognized command or legacy flag, show help
         showHelp();
       }

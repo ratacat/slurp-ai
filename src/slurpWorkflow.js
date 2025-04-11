@@ -69,7 +69,7 @@ function extractNameFromUrl(url) {
       .replace(/\$/g, 's')  // Replace $ with s
       .replace(/[^a-z0-9-]/gi, ''); // Sanitize
   } catch (error) {
-    log.warn(`Failed to extract name from URL "${url}": ${error.message}`);
+    log.warn('Workflow', `Failed to extract name from URL "${url}": ${error.message}`);
     return `doc-${Date.now()}`;
   }
 }
@@ -103,7 +103,7 @@ async function runSlurpWorkflow(url, options = {}) {
   let progressCallback; // Store the progress callback for tests to access
 
   try {
-    log.info(`Starting Slurp workflow for URL: ${url}`);
+    // Starting log removed as it's now handled by CLI
 
     // --- Validate URL ---
     let urlObj;
@@ -111,7 +111,7 @@ async function runSlurpWorkflow(url, options = {}) {
       urlObj = new URL(url);
     } catch (e) {
       // We need to throw this error directly, not catch it in the outer try-catch
-      log.error(`Invalid URL provided: ${url}`);
+      log.error('Workflow', `Invalid URL provided: ${url}`);
       throw new Error(`Invalid URL provided: ${url}`);
     }
 
@@ -151,7 +151,8 @@ async function runSlurpWorkflow(url, options = {}) {
     const scrapeConfig = {
       baseUrl: url, // The actual starting point for scraping
       basePath: options.basePath || url, // The path prefix for filtering (defaults to start URL)
-      enforceBasePath: process.env.SLURP_ENFORCE_BASE_PATH === 'true', // Read directly from env here
+      // If basePath is explicitly provided or env var is true, enforce base path filtering
+      enforceBasePath: options.basePath !== undefined || process.env.SLURP_ENFORCE_BASE_PATH === 'true',
       outputDir: structuredPartialsDir,
       maxPages: options.maxPages ?? parseInt(process.env.SLURP_MAX_PAGES_PER_SITE || '20', 10),
       useHeadless: options.useHeadless ?? true,
@@ -186,17 +187,20 @@ async function runSlurpWorkflow(url, options = {}) {
            const relativePath = segments.slice(0, -1).map(s => s.replace(/[^a-z0-9_-]/gi, '_')).join(path.sep); // Sanitize relative path parts
            return relativePath ? path.join(relativePath, filename) : filename;
          } catch (error) {
-           log.warn(`Error generating filename for ${pageUrl}: ${error.message}`);
+           log.warn('Workflow', `Error generating filename for ${pageUrl}: ${error.message}`);
            return `page-${Date.now()}.md`;
          }
        },
       signal: options.signal // Pass the signal to the scraper config
     };
 
+    // Log base path configuration for debugging
+    log.verbose(`Base path config: baseUrl=${scrapeConfig.baseUrl}, basePath=${scrapeConfig.basePath}, enforceBasePath=${scrapeConfig.enforceBasePath}`);
+
     scraper = new DocumentationScraper(scrapeConfig);
 
     // --- Run Scraper ---
-    log.info(`Scraping starting from ${url}...`);
+    log.start('Scraping', `Starting... (Concurrency: ${scrapeConfig.concurrency})`);
     
     // Create a reference to track processed count
     let processedCount = 0;
@@ -211,10 +215,11 @@ async function runSlurpWorkflow(url, options = {}) {
                 options.onProgress(processedCount, undefined, `Scraping page ${processedCount}...`);
             }
             if (processedCount % 10 === 0 || processedCount === 1) { // Log every 10 pages
-                log.verbose(`Scraping progress: ${processedCount} pages processed...`);
+                // Use a safe approach that doesn't require scrapeStats to be defined yet
+                log.progress(`Scraping page ${processedCount}/?...`);
             }
         } else if (data.type === 'failed') {
-            log.warn(`Failed to scrape: ${data.url} - ${data.error}`);
+            log.warn('Scraping', `Failed to scrape: ${data.url} - ${data.error}`);
         }
     };
     
@@ -228,7 +233,7 @@ async function runSlurpWorkflow(url, options = {}) {
     }
 
     const scrapeStats = await scraper.start(); // This promise resolves when scraping is done
-    log.success(`Scraping finished. Processed: ${scrapeStats.processed}, Failed: ${scrapeStats.failed}`);
+    log.success('Scraping', `Finished. Processed: ${scrapeStats.processed} pages, Failed: ${scrapeStats.failed} pages (${scrapeStats.duration.toFixed(1)}s)`);
 
     if (scrapeStats.processed === 0) {
         throw new Error("Scraping completed, but no pages were successfully processed. Cannot compile.");
@@ -248,20 +253,20 @@ async function runSlurpWorkflow(url, options = {}) {
     const compiler = new MarkdownCompiler(compileOptions);
 
     // --- Run Compiler ---
-    log.info(`Compiling partials from ${structuredPartialsDir}...`);
+    log.start('Compiling', `Processing partials from ${path.relative(process.cwd(), structuredPartialsDir)}...`);
     const compileResult = await compiler.compile();
-    log.success(`Compilation complete! Output: ${path.relative(process.cwd(), compileResult.outputFile)}`);
+    log.success('Compiling', `Finished. Output: ${path.relative(process.cwd(), compileResult.outputFile)} (${compileResult.stats.processedFiles} files processed)`);
     log.verbose(`Compiler Stats: ${JSON.stringify(compileResult.stats)}`);
 
     if (compileResult.stats.processedFiles === 0) {
-        log.warn("Compilation finished, but no files were processed from the partials directory.");
+        log.warn('Compiling', "Compilation finished, but no files were processed.");
         // Decide if this is an error or just a warning. Let's treat it as success for now, but log clearly.
     }
 
      // --- Cleanup Partials ---
      const shouldDeletePartials = options.deletePartials ?? (process.env.SLURP_DELETE_PARTIALS !== 'false');
      if (shouldDeletePartials && compileResult.stats.processedFiles > 0) {
-       log.verbose(`Deleting partials directory: ${structuredPartialsDir}`);
+       log.start('Cleanup', `Deleting partials directory: ${path.relative(process.cwd(), structuredPartialsDir)}...`);
        await fs.remove(structuredPartialsDir);
        log.verbose(`Partials directory deleted.`);
      } else if (shouldDeletePartials) {
@@ -269,7 +274,7 @@ async function runSlurpWorkflow(url, options = {}) {
      }
 
     // --- Final Success Message ---
-    log.success(`Workflow completed. Documentation for ${siteName}${version ? ` ${version}` : ''} is available at ${path.relative(process.cwd(), finalCompiledPath)}`);
+    log.final(`Slurp complete! Final output: ${path.relative(process.cwd(), finalCompiledPath)}`);
 
     // --- Return Success ---
     return {
@@ -278,7 +283,7 @@ async function runSlurpWorkflow(url, options = {}) {
     };
 
   } catch (error) {
-    log.error(`Slurp workflow failed: ${error.message}`);
+    log.error('Workflow', `Slurp workflow failed: ${error.message}`);
     if (error.stack) {
         log.verbose(error.stack); // Log stack in verbose mode
     }
@@ -295,7 +300,7 @@ async function runSlurpWorkflow(url, options = {}) {
             await fs.remove(structuredPartialsDir);
             log.verbose(`Partials directory deleted during error cleanup.`);
         } catch (cleanupError) {
-            log.warn(`Failed to cleanup partials directory during error handling: ${cleanupError.message}`);
+            log.warn('Cleanup', `Failed to cleanup partials directory during error handling: ${cleanupError.message}`);
         }
     }
     return { success: false, error: error };
