@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Wrapper for the slurp CLI to suppress Node.js deprecation warnings
+
+# Find the real directory of this script, resolving symlinks
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symlink
+  DIR="$( cd -P "$( dirname "$SOURCE" )" &>/dev/null && pwd )"
+  SOURCE="$(readlink "$SOURCE")"
+  # if $SOURCE was a relative symlink, resolve it relative to the path where the symlink file was located
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$( cd -P "$( dirname "$SOURCE" )" &>/dev/null && pwd )"
+
+# Assume project root is one level up from the bin directory where this script lives
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." &>/dev/null && pwd)"
+
+NODE_ARGS="--no-deprecation"
+CLI_JS="$PROJECT_ROOT/src/cli.js"
+
+# Check if the cli.js file exists before trying to execute it
+if [ ! -f "$CLI_JS" ]; then
+  echo "Error: Wrapper script could not find cli.js at expected location: $CLI_JS" >&2
+  exit 1
+fi
+
+# Execute the actual CLI script with the node args and pass through all original arguments
+exec node $NODE_ARGS "$CLI_JS" "$@"
