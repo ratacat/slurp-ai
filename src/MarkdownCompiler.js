@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import yaml from 'js-yaml';
 import { resolvePath } from './utils/pathUtils.js';
 import { cleanupMarkdown as sharedCleanupMarkdown } from './utils/markdownUtils.js';
+import config, { paths, compilation } from '../config.js';
 /**
  * MarkdownCompiler - A class to compile markdown files into a single document
  */
@@ -19,24 +20,23 @@ class MarkdownCompiler {
    * @param {RegExp[]} options.excludePatterns - Array of regex patterns to exclude (default: common patterns)
    */
   constructor(options = {}) {
-    this.basePath = options.basePath || process.env.SLURP_BASE_PATH || process.cwd();
-    // Default input dir is slurp_partials
-    this.inputDir = resolvePath(options.inputDir || process.env.SLURP_INPUT_DIR || 'slurp_partials', this.basePath);
-    // Default output file path using environment variables or hardcoded default
-    const outputDir = process.env.SLURP_OUTPUT_DIR || process.env.SLURP_COMPILED_DIR || 'slurp_compiled';
-    this.outputFile = resolvePath(options.outputFile || path.join(outputDir, 'compiled_docs.md'), this.basePath);
+    this.basePath = options.basePath || paths.basePath;
+    // Default input dir from config
+    this.inputDir = resolvePath(options.inputDir || paths.inputDir, this.basePath);
+    // Default output file path using config values
+    this.outputFile = resolvePath(options.outputFile || path.join(paths.outputDir, 'compiled_docs.md'), this.basePath);
     
     this.preserveMetadata = options.preserveMetadata !== undefined ?
       options.preserveMetadata :
-      (process.env.SLURP_PRESERVE_METADATA !== 'false');
+      compilation.preserveMetadata;
       
     this.removeNavigation = options.removeNavigation !== undefined ?
       options.removeNavigation :
-      (process.env.SLURP_REMOVE_NAVIGATION !== 'false');
+      compilation.removeNavigation;
       
     this.removeDuplicates = options.removeDuplicates !== undefined ?
       options.removeDuplicates :
-      (process.env.SLURP_REMOVE_DUPLICATES !== 'false');
+      compilation.removeDuplicates;
       
       
     

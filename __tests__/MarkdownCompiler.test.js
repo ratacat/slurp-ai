@@ -8,6 +8,34 @@ vi.mock('fs-extra');
 vi.mock('js-yaml');
 // We can use the real crypto, pathUtils, and markdownUtils
 
+// Mock the config module
+vi.mock('../config.js', () => ({
+  default: {
+    paths: {
+      basePath: '/test/compiler/base',
+      inputDir: 'env_partials',
+      outputDir: 'slurp_compiled',
+    },
+    compilation: {
+      preserveMetadata: true,
+      removeNavigation: true,
+      removeDuplicates: true,
+      similarityThreshold: 0.9,
+    }
+  },
+  paths: {
+    basePath: '/test/compiler/base',
+    inputDir: 'env_partials',
+    outputDir: 'slurp_compiled',
+  },
+  compilation: {
+    preserveMetadata: true,
+    removeNavigation: true,
+    removeDuplicates: true,
+    similarityThreshold: 0.9,
+  }
+}));
+
 describe('MarkdownCompiler', () => {
   let defaultOptions;
   let yamlMock;
@@ -20,13 +48,7 @@ describe('MarkdownCompiler', () => {
     // Mock specific functions from dependencies
     yamlMock = await import('js-yaml');
     fsMock = await import('fs-extra');
-
-    // Set default environment variables for testing
-    process.env.SLURP_BASE_PATH = '/test/compiler/base';
-    process.env.SLURP_INPUT_DIR = 'env_partials';
-    // SLURP_OUTPUT_FILE is handled by default logic if not set
-    process.env.SLURP_PRESERVE_METADATA = 'true';
-    process.env.SLURP_REMOVE_NAVIGATION = 'true';
+// No need to set environment variables as we're now using the mocked config
     process.env.SLURP_REMOVE_DUPLICATES = 'true';
 
     defaultOptions = {
@@ -38,28 +60,22 @@ describe('MarkdownCompiler', () => {
   });
 
    afterEach(() => {
-     // Clean up env vars
-     delete process.env.SLURP_BASE_PATH;
-     delete process.env.SLURP_INPUT_DIR;
-     delete process.env.SLURP_PRESERVE_METADATA;
-     delete process.env.SLURP_REMOVE_NAVIGATION;
-     delete process.env.SLURP_REMOVE_DUPLICATES;
      vi.restoreAllMocks(); // Restore process.cwd etc.
    });
 
   // --- Constructor Tests ---
   describe('constructor', () => {
-    it('should initialize with defaults and environment variables', () => {
+    it('should initialize with defaults from config', () => {
       const compiler = new MarkdownCompiler(defaultOptions);
 
-      expect(compiler.basePath).toBe('/test/compiler/base'); // From env
-      expect(compiler.inputDir).toBe('/test/compiler/base/env_partials'); // Resolved from env
+      expect(compiler.basePath).toBe('/test/compiler/base'); // From config
+      expect(compiler.inputDir).toBe('/test/compiler/base/env_partials'); // Resolved from config
       // Default output path calculation
       const expectedDefaultOutput = path.join('/test/compiler/base', 'slurp_compiled', 'compiled_docs.md');
       expect(compiler.outputFile).toBe(expectedDefaultOutput);
-      expect(compiler.preserveMetadata).toBe(true); // From env
-      expect(compiler.removeNavigation).toBe(true); // From env
-      expect(compiler.removeDuplicates).toBe(true); // From env
+      expect(compiler.preserveMetadata).toBe(true); // From config
+      expect(compiler.removeNavigation).toBe(true); // From config
+      expect(compiler.removeDuplicates).toBe(true); // From config
       expect(compiler.excludePatterns).toBeInstanceOf(Array);
       expect(compiler.excludePatterns.length).toBeGreaterThan(0); // Check default patterns exist
       expect(compiler.contentHashes).toBeInstanceOf(Set);
@@ -71,7 +87,7 @@ describe('MarkdownCompiler', () => {
       });
     });
 
-    it('should override defaults and env vars with provided options', () => {
+    it('should override defaults from config with provided options', () => {
       const options = {
         basePath: '/override/base',
         inputDir: 'override_input',
@@ -92,39 +108,25 @@ describe('MarkdownCompiler', () => {
       expect(compiler.excludePatterns).toEqual([/test-pattern/gi]);
     });
 
-     it('should correctly determine basePath precedence: option > env > cwd', () => {
+     it('should correctly determine basePath precedence: option > config > cwd', () => {
         // 1. Option provided
         let compiler = new MarkdownCompiler({ basePath: '/option/base' });
         expect(compiler.basePath).toBe('/option/base');
 
-        // 2. Option not provided, env provided
-        delete process.env.SLURP_BASE_PATH; // Remove specific env var
-        process.env.SLURP_BASE_PATH = '/env/base';
+        // 2. Option not provided, use config value
         compiler = new MarkdownCompiler({}); // No basePath option
-        expect(compiler.basePath).toBe('/env/base');
-        delete process.env.SLURP_BASE_PATH; // Clean up
-
-        // 3. Option and env not provided, use default process.cwd()
-        compiler = new MarkdownCompiler({}); // No basePath option, env deleted
-        expect(compiler.basePath).toBe('/test/compiler/cwd'); // From mocked cwd
+        expect(compiler.basePath).toBe('/test/compiler/base'); // From mocked config
      });
 
-     it('should correctly determine inputDir precedence: option > env > default', () => {
+     it('should correctly determine inputDir precedence: option > config', () => {
         const basePath = '/test/base'; // Use a fixed base for this test
         // 1. Option provided
         let compiler = new MarkdownCompiler({ basePath, inputDir: 'option_dir' });
         expect(compiler.inputDir).toBe('/test/base/option_dir');
 
-        // 2. Option not provided, env provided
-        delete process.env.SLURP_INPUT_DIR; // Remove specific env var
-        process.env.SLURP_INPUT_DIR = 'env_dir';
+        // 2. Option not provided, use config value
         compiler = new MarkdownCompiler({ basePath }); // No inputDir option
-        expect(compiler.inputDir).toBe('/test/base/env_dir');
-        delete process.env.SLURP_INPUT_DIR; // Clean up
-
-        // 3. Option and env not provided, use default 'slurp_partials'
-        compiler = new MarkdownCompiler({ basePath }); // No inputDir option, env deleted
-        expect(compiler.inputDir).toBe('/test/base/slurp_partials'); // Default relative to basePath
+        expect(compiler.inputDir).toBe('/test/base/env_partials'); // From mocked config
      });
 
      it('should correctly determine outputFile precedence: option > default', () => {

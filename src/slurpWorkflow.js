@@ -5,6 +5,7 @@ import { URL } from 'url';
 import DocumentationScraper from './DocumentationScraper.js';
 import { MarkdownCompiler } from './MarkdownCompiler.js';
 import { log } from './utils/logger.js';
+import config, { paths, scraping, urlFiltering } from '../config.js';
 
 /**
  * Extracts a base name from a URL, suitable for filenames/directory names.
@@ -120,8 +121,8 @@ async function runSlurpWorkflow(url, options = {}) {
     const version = options.version; // Use version if provided in options
 
     // Determine base directories
-    const basePartialsDir = options.partialsOutputDir || process.env.SLURP_PARTIALS_DIR || 'slurp_partials';
-    const compiledOutputDir = options.compiledOutputDir || process.env.SLURP_OUTPUT_DIR || process.env.SLURP_COMPILED_DIR || 'compiled';
+    const basePartialsDir = options.partialsOutputDir || paths.inputDir;
+    const compiledOutputDir = options.compiledOutputDir || paths.outputDir;
     
     // Create absolute paths using process.cwd()
     const absolutePartialsDir = path.isAbsolute(basePartialsDir)
@@ -152,10 +153,10 @@ async function runSlurpWorkflow(url, options = {}) {
       baseUrl: url, // The actual starting point for scraping
       basePath: options.basePath || url, // The path prefix for filtering (defaults to start URL)
       // If basePath is explicitly provided or env var is true, enforce base path filtering
-      enforceBasePath: options.basePath !== undefined || process.env.SLURP_ENFORCE_BASE_PATH === 'true',
+      enforceBasePath: options.basePath !== undefined || urlFiltering.enforceBasePath,
       outputDir: structuredPartialsDir,
-      maxPages: options.maxPages ?? parseInt(process.env.SLURP_MAX_PAGES_PER_SITE || '20', 10),
-      useHeadless: options.useHeadless ?? true,
+      maxPages: options.maxPages ?? scraping.maxPagesPerSite,
+      useHeadless: options.useHeadless ?? !scraping.useHeadless, // Note: useHeadless in config is inverted from the one used here
       libraryInfo: { // Minimal library info for context
         library: siteName,
         version: version || '',
@@ -167,8 +168,8 @@ async function runSlurpWorkflow(url, options = {}) {
          'footer', '.footer', 'script', 'style', '.headerlink'
        ],
       allowedDomains: [urlObj.hostname],
-      concurrency: options.concurrency ?? parseInt(process.env.SLURP_CONCURRENCY || '10', 10),
-      retryCount: options.retryCount ?? 3,
+      concurrency: options.concurrency ?? scraping.concurrency,
+      retryCount: options.retryCount ?? scraping.retryCount,
       retryDelay: options.retryDelay ?? 1000,
       // Custom filename generator adapted from cli.js
       getFilenameForUrl: function(pageUrl) {
@@ -244,9 +245,9 @@ async function runSlurpWorkflow(url, options = {}) {
       inputDir: structuredPartialsDir,
       outputFile: finalCompiledPath,
       // outputName: siteName, // outputName seems less relevant now we have outputFile
-      preserveMetadata: options.preserveMetadata ?? (process.env.SLURP_PRESERVE_METADATA !== 'false'),
-      removeNavigation: options.removeNavigation ?? (process.env.SLURP_REMOVE_NAVIGATION !== 'false'),
-      removeDuplicates: options.removeDuplicates ?? (process.env.SLURP_REMOVE_DUPLICATES !== 'false'),
+      preserveMetadata: options.preserveMetadata ?? config.compilation.preserveMetadata,
+      removeNavigation: options.removeNavigation ?? config.compilation.removeNavigation,
+      removeDuplicates: options.removeDuplicates ?? config.compilation.removeDuplicates,
       // excludePatterns can be passed via options if needed, but omitted for simplicity now
     };
 
@@ -264,7 +265,7 @@ async function runSlurpWorkflow(url, options = {}) {
     }
 
      // --- Cleanup Partials ---
-     const shouldDeletePartials = options.deletePartials ?? (process.env.SLURP_DELETE_PARTIALS !== 'false');
+     const shouldDeletePartials = options.deletePartials ?? true; // Default to true if not specified in options
      if (shouldDeletePartials && compileResult.stats.processedFiles > 0) {
        log.start('Cleanup', `Deleting partials directory: ${path.relative(process.cwd(), structuredPartialsDir)}...`);
        await fs.remove(structuredPartialsDir);
@@ -294,7 +295,7 @@ async function runSlurpWorkflow(url, options = {}) {
     }
     
     // Attempt cleanup even on error if the directory was created
-    if (structuredPartialsDir && (options.deletePartials ?? (process.env.SLURP_DELETE_PARTIALS !== 'false'))) {
+    if (structuredPartialsDir && (options.deletePartials ?? true)) { // Default to true if not specified in options
         try {
             log.verbose(`Attempting cleanup of partials directory on error: ${structuredPartialsDir}`);
             await fs.remove(structuredPartialsDir);

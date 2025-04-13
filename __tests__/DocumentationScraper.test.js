@@ -3,6 +3,51 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import DocsToMarkdown from '../src/DocumentationScraper.js';
 import { URL } from 'url';
 
+// Mock the config module
+vi.mock('../config.js', () => ({
+  default: {
+    paths: {
+      basePath: '/test/base',
+      inputDir: 'test_partials',
+      outputDir: 'slurp_compiled',
+    },
+    scraping: {
+      maxPagesPerSite: 50,
+      concurrency: 2,
+      retryCount: 1,
+      retryDelay: 1000,
+      useHeadless: true,
+      debug: false,
+      timeout: 60000,
+    },
+    urlFiltering: {
+      enforceBasePath: true,
+      preserveQueryParams: ['version', 'lang'],
+      depthNumberOfSegments: 4,
+      depthSegmentCheck: ['docs', 'api', 'reference'],
+    }
+  },
+  paths: {
+    basePath: '/test/base',
+    inputDir: 'test_partials',
+  },
+  scraping: {
+    maxPagesPerSite: 50,
+    concurrency: 2,
+    retryCount: 1,
+    retryDelay: 1000,
+    useHeadless: true,
+    debug: false,
+    timeout: 60000,
+  },
+  urlFiltering: {
+    enforceBasePath: true,
+    preserveQueryParams: ['version', 'lang'],
+    depthNumberOfSegments: 4,
+    depthSegmentCheck: ['docs', 'api', 'reference'],
+  }
+}));
+
 // Mock cheerio - This must be before we import the module we're testing
 // Setup a global mockCheerioInstance that can be accessed in the test context
 const mockCheerioInstance = {
@@ -197,14 +242,10 @@ describe('DocsToMarkdown', () => {
     
     // Add prototype to make instanceof work
     global.URL.prototype = originalURL.prototype;
-    
     // Mock process.cwd()
     vi.spyOn(process, 'cwd').mockReturnValue('/mock/cwd');
     
-    // Mock environment variables
-    process.env.SLURP_DEPTH_NUMBER_OF_SEGMENTS = '4';
-    process.env.SLURP_DEPTH_SEGMENT_CHECK = ['docs', 'api', 'reference'];
-    
+    // Default options for tests
     // Default options for tests
     defaultOptions = {
       baseUrl: 'https://example.com/docs/v1/',
@@ -223,8 +264,6 @@ describe('DocsToMarkdown', () => {
   afterEach(() => {
     vi.clearAllMocks();
     global.URL = originalURL; // Restore original URL
-    delete process.env.SLURP_DEPTH_NUMBER_OF_SEGMENTS;
-    delete process.env.SLURP_DEPTH_SEGMENT_CHECK;
   });
 
   // --- Constructor Tests ---
@@ -252,39 +291,29 @@ describe('DocsToMarkdown', () => {
       const scraper = new DocsToMarkdown(options);
       expect(scraper.allowedDomains).toEqual(['example.com']);
     });
+it('should handle output directory paths with options and config', () => {
+  // 1. Option provided
+  let scraper = new DocsToMarkdown({ ...defaultOptions, outputDir: 'option_dir' });
+  expect(scraper.outputDir).toBe('/test/base/option_dir');
 
-    it('should handle output directory paths with options and environment', () => {
-      // 1. Option provided
-      let scraper = new DocsToMarkdown({ ...defaultOptions, outputDir: 'option_dir' });
-      expect(scraper.outputDir).toBe('/test/base/option_dir');
-
-      // 2. Option not provided, use environment variable
-      delete defaultOptions.outputDir;
-      process.env.SLURP_PARTIALS_DIR = 'env_dir';
-      scraper = new DocsToMarkdown({ ...defaultOptions }); // No outputDir option
-      expect(scraper.outputDir).toBe('/test/base/env_dir');
-
-      // 3. Option and env not provided, use default 'slurp_partials'
-      delete process.env.SLURP_PARTIALS_DIR;
-      scraper = new DocsToMarkdown({ ...defaultOptions }); // No outputDir option, env deleted
-      expect(scraper.outputDir).toBe('/test/base/slurp_partials'); // Default relative to basePath
-    });
+  // 2. Option not provided, use config
+  delete defaultOptions.outputDir;
+  scraper = new DocsToMarkdown({ ...defaultOptions }); // No outputDir option
+  expect(scraper.outputDir).toBe('/test/base/test_partials'); // From mocked config
+});
     
-    it('should handle base path with options and environment', () => {
+    it('should handle base path with options and config', () => {
       // 1. Option provided
       let scraper = new DocsToMarkdown({ ...defaultOptions, basePath: '/option/base' });
       expect(scraper.basePath).toBe('/option/base');
 
-      // 2. Option not provided, use environment variable
+      // 2. Option not provided, use config
       delete defaultOptions.basePath;
-      process.env.SLURP_BASE_PATH = '/env/base';
       scraper = new DocsToMarkdown({ ...defaultOptions }); // No basePath option
-      expect(scraper.basePath).toBe('/env/base');
+      expect(scraper.basePath).toBe('/test/base'); // From mocked config
 
-      // 3. Option and env not provided, use default process.cwd()
-      delete process.env.SLURP_BASE_PATH;
-      scraper = new DocsToMarkdown({ ...defaultOptions }); // No basePath option, env deleted
-      expect(scraper.basePath).toBe('/mock/cwd'); // Default
+      // Note: We can't test the process.cwd() fallback here because vi.mock can't be called inside a test function
+      // That would require modifying the mock at the module level
     });
   });
 

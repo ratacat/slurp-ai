@@ -11,6 +11,7 @@ import { extract } from '@extractus/article-extractor';
 import { resolvePath } from './utils/pathUtils.js';
 import { cleanupMarkdown as sharedCleanupMarkdown } from './utils/markdownUtils.js';
 import { log } from './utils/logger.js'; // Import the logger utility
+import config, { paths, scraping, urlFiltering } from '../config.js';
 // Handle potential default export for p-queue (ESM compatibility)
 import PQueueModule from 'p-queue';
 let PQueueImport = PQueueModule;
@@ -41,8 +42,8 @@ class DocsToMarkdown extends EventEmitter {
   constructor(options) {
     super();
     this.baseUrl = options.baseUrl;
-    this.basePath = options.basePath || process.env.SLURP_BASE_PATH || process.cwd();
-    this.outputDir = resolvePath(options.outputDir || process.env.SLURP_PARTIALS_DIR || 'slurp_partials', this.basePath);
+    this.basePath = options.basePath || paths.basePath;
+    this.outputDir = resolvePath(options.outputDir || paths.inputDir, this.basePath);
     this.libraryInfo = options.libraryInfo || {};
     this.visitedUrls = new Set();
     this.queuedUrls = new Set();
@@ -51,17 +52,17 @@ class DocsToMarkdown extends EventEmitter {
     this.allowedDomains = options.allowedDomains || [this.baseUrlObj.hostname];
     
     this.maxPages = options.maxPages !== undefined ? 
-      options.maxPages : 
-      (parseInt(process.env.SLURP_MAX_PAGES_PER_SITE, 10) || 0);
+      options.maxPages :
+      scraping.maxPagesPerSite;
     
     this.useHeadless = options.useHeadless !== undefined ?
       options.useHeadless :
-      (process.env.SLURP_USE_HEADLESS !== 'false');
+      !scraping.useHeadless;
     
     // this.baseUrlPath = this.baseUrlObj.pathname; // Removed - logic now uses full basePath string
     this.enforceBasePath = options.enforceBasePath !== undefined ?
       options.enforceBasePath :
-      (process.env.SLURP_ENFORCE_BASE_PATH === 'true'); // Explicitly check for 'true'
+      urlFiltering.enforceBasePath;
     
     this.urlBlacklist = options.urlBlacklist || [
       // Common non-documentation pages
@@ -180,8 +181,7 @@ class DocsToMarkdown extends EventEmitter {
       this.excludeSelectors.push(...options.excludeSelectors);
     }
 
-    const envQueryParams = process.env.SLURP_PRESERVE_QUERY_PARAMS ? 
-      process.env.SLURP_PRESERVE_QUERY_PARAMS.split(',') : null;
+    const envQueryParams = urlFiltering.preserveQueryParams;
     
     this.queryParamsToKeep = options.queryParamsToKeep || envQueryParams || [
       // Version related
@@ -216,14 +216,14 @@ class DocsToMarkdown extends EventEmitter {
       'example'
     ];
     
-    this.concurrency = options.concurrency || 
-      parseInt(process.env.SLURP_CONCURRENCY, 10) || 10;
+    this.concurrency = options.concurrency ||
+      scraping.concurrency;
       
-    this.retryCount = options.retryCount || 
-      parseInt(process.env.SLURP_RETRY_COUNT, 10) || 3;
+    this.retryCount = options.retryCount ||
+      scraping.retryCount;
       
-    this.retryDelay = options.retryDelay || 
-      parseInt(process.env.SLURP_RETRY_DELAY, 10) || 1000;
+    this.retryDelay = options.retryDelay ||
+      scraping.retryDelay;
     
     this.queue = new PQueue({
       concurrency: this.concurrency,
@@ -456,7 +456,7 @@ class DocsToMarkdown extends EventEmitter {
 
     
     const checkInterval = 2000; // Check every 2 seconds
-    const internalTimeout = parseInt(process.env.SLURP_TIMEOUT, 10) || 60000;
+    const internalTimeout = scraping.timeout;
     const hangTimeout = internalTimeout * 1.5; // Timeout if no progress for 1.5x task timeout
     let lastProcessedCount = -1;
     let lastProgressTime = Date.now();
@@ -545,8 +545,8 @@ class DocsToMarkdown extends EventEmitter {
     
     this.queuedUrls.add(url);
     
-    // Use SLURP_TIMEOUT from env, add a buffer (e.g., 5s), default to 70s
-    const internalTimeout = parseInt(process.env.SLURP_TIMEOUT, 10) || 60000;
+    // Use timeout from config, add a buffer of 5s
+    const internalTimeout = scraping.timeout;
     const taskTimeout = internalTimeout + 5000; // Task timeout slightly longer than internal
     this.queue.add(async () => {
       // Check signal at the beginning of task execution
@@ -779,8 +779,8 @@ class DocsToMarkdown extends EventEmitter {
       }
       
       const pathSegments = urlObj.pathname.split('/').filter(Boolean);
-      if (pathSegments.length > process.env.SLURP_DEPTH_NUMBER_OF_SEGMENTS) {
-        const docPatterns = process.env.SLURP_DEPTH_SEGMENT_CHECK;
+      if (pathSegments.length > urlFiltering.depthNumberOfSegments) {
+        const docPatterns = urlFiltering.depthSegmentCheck;
         let isDocPath = false;
         
         for (const pattern of docPatterns) {

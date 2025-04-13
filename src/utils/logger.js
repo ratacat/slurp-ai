@@ -1,12 +1,13 @@
 /**
  * Enhanced logger utility for SlurpAI with structured log levels and emoji indicators.
- * Respects the --verbose flag and SLURP_VERBOSE environment variable.
+ * Respects the --verbose flag and debug configuration.
  * @module logger
  */
 import chalk from 'chalk';
+import { scraping } from '../../config.js';
 
-// Check for verbose mode from either environment variable or command line arguments
-const verbose = process.env.SLURP_VERBOSE === 'true' || process.argv.includes('--verbose');
+// Check for verbose mode from either config debug setting or command line arguments
+const verbose = scraping.debug || process.argv.includes('--verbose');
 
 // Fallback for chalk if needed in certain environments
 const chalkFallback = { 

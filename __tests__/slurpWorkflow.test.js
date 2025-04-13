@@ -7,6 +7,64 @@ import DocumentationScraper from '../src/DocumentationScraper.js'; // Mocked cla
 import { MarkdownCompiler } from '../src/MarkdownCompiler.js'; // Mocked class
 import { log } from '../src/utils/logger.js'; // Mocked logger
 
+// Mock the config module
+vi.mock('../config.js', () => ({
+  default: {
+    paths: {
+      basePath: '/test/base',
+      inputDir: 'slurp_partials_env',
+      outputDir: 'compiled_env',
+    },
+    scraping: {
+      maxPagesPerSite: 20,
+      concurrency: 10,
+      retryCount: 3,
+      retryDelay: 1000,
+      useHeadless: false,
+      debug: false,
+      timeout: 60000,
+    },
+    urlFiltering: {
+      enforceBasePath: true,
+      preserveQueryParams: ['version', 'lang', 'theme'],
+      depthNumberOfSegments: 5,
+      depthSegmentCheck: ['api', 'reference', 'guide', 'tutorial', 'example', 'doc'],
+    },
+    compilation: {
+      preserveMetadata: true,
+      removeNavigation: true,
+      removeDuplicates: true,
+      similarityThreshold: 0.9,
+    }
+  },
+  paths: {
+    basePath: '/test/base',
+    inputDir: 'slurp_partials_env',
+    outputDir: 'compiled_env',
+  },
+  scraping: {
+    maxPagesPerSite: 20,
+    concurrency: 10,
+    retryCount: 3,
+    retryDelay: 1000,
+    useHeadless: false,
+    debug: false,
+    timeout: 60000,
+  },
+  urlFiltering: {
+    enforceBasePath: true,
+    preserveQueryParams: ['version', 'lang', 'theme'],
+    depthNumberOfSegments: 5,
+    depthSegmentCheck: ['api', 'reference', 'guide', 'tutorial', 'example', 'doc'],
+  },
+  compilation: {
+    preserveMetadata: true,
+    removeNavigation: true,
+    removeDuplicates: true,
+    similarityThreshold: 0.9,
+  }
+}));
+
 // --- Mock Dependencies ---
 vi.mock('fs-extra');
 vi.mock('../src/DocumentationScraper.js');
