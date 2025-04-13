@@ -2,8 +2,6 @@
  * Configuration for SlurpAI - defines all application settings with hardcoded values
  */
 
-import process from 'process';
-
 const config = {
   // File system paths
   paths: {
@@ -11,7 +9,7 @@ const config = {
     inputDir: 'slurps_partials',
     outputDir: 'slurps',
   },
-  
+
   // Web scraping settings
   scraping: {
     maxPagesPerSite: 100,
@@ -22,22 +20,29 @@ const config = {
     debug: false,
     timeout: 60000,
   },
-  
+
   // URL filtering options
   urlFiltering: {
     enforceBasePath: true,
     preserveQueryParams: ['version', 'lang', 'theme'],
     depthNumberOfSegments: 5,
-    depthSegmentCheck: ['api', 'reference', 'guide', 'tutorial', 'example', 'doc'],
+    depthSegmentCheck: [
+      'api',
+      'reference',
+      'guide',
+      'tutorial',
+      'example',
+      'doc',
+    ],
   },
-  
+
   // Markdown compilation options
   compilation: {
     preserveMetadata: true,
     removeNavigation: true,
     removeDuplicates: true,
     similarityThreshold: 0.9,
-  }
+  },
 };
 
 export default config;

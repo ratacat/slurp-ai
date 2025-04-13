@@ -1,20 +1,21 @@
-const DocsToMarkdown = require('./src/DocsToMarkdown');
-const path = require('path');
+import path from 'path';
+import fs from 'fs-extra';
+import DocsToMarkdown from './src/MarkdownCompiler.js';
 
 // Simple command line argument parsing
 const args = process.argv.slice(2);
 const params = {};
 
 // Parse command line arguments
-for (let i = 0; i < args.length; i++) {
+for (let i = 0; i < args.length; i += 1) {
   const arg = args[i];
-  
+
   if (arg.startsWith('--')) {
     const key = arg.slice(2);
     // Check if the next arg is a value or another flag
     if (i + 1 < args.length && !args[i + 1].startsWith('--')) {
       params[key] = args[i + 1];
-      i++; // Skip the next arg as we've consumed it
+      i += 1; // Skip the next arg as we've consumed it
     } else {
       params[key] = true; // Flag without value
     }
@@ -24,7 +25,10 @@ for (let i = 0; i < args.length; i++) {
 // Set default values
 const baseUrl = params.url || 'https://flask.palletsprojects.com/en/stable/';
 const outputDir = params.output || path.join(__dirname, 'docs');
-const maxPages = parseInt(params.max || process.env.MAX_PAGES_PER_SITE || '0', 10);
+const maxPages = parseInt(
+  params.max || process.env.MAX_PAGES_PER_SITE || '0',
+  10,
+);
 const useHeadless = params.headless !== 'false';
 
 // Library and version info
@@ -43,33 +47,33 @@ const config = {
   outputDir,
   maxPages,
   useHeadless,
-  
+
   // Library information
   libraryInfo: {
     library,
     version,
-    exactVersionMatch
+    exactVersionMatch,
   },
-  
+
   // Content selector based on documentation site
   // Default to common content selectors
   contentSelector: '.document', // Main content area for Flask docs
   excludeSelectors: [
-    '.headerlink',       // Remove header links
-    'script',            // Remove scripts
-    'style',             // Remove styles
-    '.sidebar',          // Remove sidebar
-    '.related',          // Remove navigation
-    '.footer'            // Remove footer
+    '.headerlink', // Remove header links
+    'script', // Remove scripts
+    'style', // Remove styles
+    '.sidebar', // Remove sidebar
+    '.related', // Remove navigation
+    '.footer', // Remove footer
   ],
-  
+
   // Domain restrictions
   allowedDomains: [new URL(baseUrl).hostname],
-  
+
   // Async queue options
   concurrency,
   retryCount,
-  retryDelay
+  retryDelay,
 };
 
 // Display configuration
@@ -80,28 +84,28 @@ async function main() {
   try {
     // Create and start the scraper
     const scraper = new DocsToMarkdown(config);
-    
+
     // Add library metadata to the save process
-    scraper.saveMarkdown = async function(url, markdown) {
+    scraper.saveMarkdown = async function (url, markdown) {
       const options = this.config.libraryInfo || {};
-      
+
       // Use our helper method for consistent filename generation
       const filename = this.getFilenameForUrl(url);
-      
+
       // Build the output directory path based on library and version info
-      let outputDir = this.outputDir;
-      
+      let currentOutputDir = this.outputDir;
+
       if (options.library) {
-        outputDir = path.join(outputDir, options.library);
-        
+        currentOutputDir = path.join(currentOutputDir, options.library);
+
         if (options.version) {
-          outputDir = path.join(outputDir, options.version);
+          currentOutputDir = path.join(currentOutputDir, options.version);
         }
       }
-      
+
       // Ensure the directory exists
-      await fs.ensureDir(outputDir);
-      
+      await fs.ensureDir(currentOutputDir);
+
       // Add metadata
       const content = `---
 url: ${url}
@@ -112,13 +116,13 @@ ${options.exactVersionMatch !== undefined ? `exactVersionMatch: ${options.exactV
 ---
 
 ${markdown}`;
-      
-      const outputPath = path.join(outputDir, filename);
+
+      const outputPath = path.join(currentOutputDir, filename);
       await fs.writeFile(outputPath, content);
     };
-    
+
     await scraper.start();
-    
+
     console.log('Documentation scraping completed successfully!');
     console.log(`Markdown files have been saved to: ${outputDir}`);
   } catch (error) {

@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import yaml from 'js-yaml';
 import { resolvePath } from './utils/pathUtils.js';
 import { cleanupMarkdown as sharedCleanupMarkdown } from './utils/markdownUtils.js';
-import config, { paths, compilation } from '../config.js';
+import { paths, compilation } from '../config.js';
 /**
  * MarkdownCompiler - A class to compile markdown files into a single document
  */
@@ -21,44 +21,51 @@ class MarkdownCompiler {
    */
   constructor(options = {}) {
     this.basePath = options.basePath || paths.basePath;
-    this.inputDir = resolvePath(options.inputDir || paths.inputDir, this.basePath);
-    this.outputFile = resolvePath(options.outputFile || path.join(paths.outputDir, 'compiled_docs.md'), this.basePath);
-    
-    this.preserveMetadata = options.preserveMetadata !== undefined ?
-      options.preserveMetadata :
-      compilation.preserveMetadata;
-      
-    this.removeNavigation = options.removeNavigation !== undefined ?
-      options.removeNavigation :
-      compilation.removeNavigation;
-      
-    this.removeDuplicates = options.removeDuplicates !== undefined ?
-      options.removeDuplicates :
-      compilation.removeDuplicates;
-      
-      
-    
+    this.inputDir = resolvePath(
+      options.inputDir || paths.inputDir,
+      this.basePath,
+    );
+    this.outputFile = resolvePath(
+      options.outputFile || path.join(paths.outputDir, 'compiled_docs.md'),
+      this.basePath,
+    );
+
+    this.preserveMetadata =
+      options.preserveMetadata !== undefined
+        ? options.preserveMetadata
+        : compilation.preserveMetadata;
+
+    this.removeNavigation =
+      options.removeNavigation !== undefined
+        ? options.removeNavigation
+        : compilation.removeNavigation;
+
+    this.removeDuplicates =
+      options.removeDuplicates !== undefined
+        ? options.removeDuplicates
+        : compilation.removeDuplicates;
+
     this.excludePatterns = options.excludePatterns || [
       /(?:^|\n)(?:#{1,6}\s*)?(?:\bOn this page\b|\bTable of contents\b|\bNavigation\b|\bContents\b)[\s\S]*?(?=\n#{1,6}\s|\n$)/gi,
-      
+
       /(?:^|\n)(?:#{1,6}\s*)?(?:Was this page helpful\?|\bFeedback\b|\bRate this page\b)[\s\S]*?(?=\n#{1,6}\s|\n$)/gi,
-      
+
       /(?:^|\n)(?:#{1,6}\s*)?(?:\bPrevious\b|\bNext\b)(?:\s*[:]\s*\[.*?\]\(.*?\))?[\s\S]*?(?=\n#{1,6}\s|\n$)/gi,
-      
+
       /(?:^|\n)(?:#{1,6}\s*)?(?:\bEdit this page\b|\bEdit on GitHub\b)[\s\S]*?(?=\n#{1,6}\s|\n$)/gi,
-      
+
       /(?:^|\n)(?:#{1,6}\s*)?(?:\bShare\b|\bTweet\b)[\s\S]*?(?=\n#{1,6}\s|\n$)/gi,
-      
-      /(?:^|\n)(?:#{1,6}\s*)?(?:\bRelated\b|\bSee also\b|\bFurther reading\b)[\s\S]*?(?=\n#{1,6}\s|\n$)/gi
+
+      /(?:^|\n)(?:#{1,6}\s*)?(?:\bRelated\b|\bSee also\b|\bFurther reading\b)[\s\S]*?(?=\n#{1,6}\s|\n$)/gi,
     ];
-    
+
     this.contentHashes = new Set();
-    
+
     this.stats = {
       totalFiles: 0,
       processedFiles: 0,
       skippedFiles: 0,
-      duplicatesRemoved: 0
+      duplicatesRemoved: 0,
     };
   }
 
@@ -68,28 +75,30 @@ class MarkdownCompiler {
    */
   async compile() {
     try {
-      if (!await fs.pathExists(this.inputDir)) {
+      if (!(await fs.pathExists(this.inputDir))) {
         throw new Error(`Input directory not found: ${this.inputDir}`);
       }
-      
+
       let outputContent = `# Compiled Documentation\n\nGenerated on ${new Date().toISOString()}\n\n`;
-      
-      const processedContent = await this.processDirectoryContent(this.inputDir);
+
+      const processedContent = await this.processDirectoryContent(
+        this.inputDir,
+      );
       outputContent += processedContent;
-      
+
       await fs.ensureDir(path.dirname(this.outputFile));
       await fs.writeFile(this.outputFile, outputContent);
-      
+
       return {
         outputFile: this.outputFile,
-        stats: this.stats
+        stats: this.stats,
       };
     } catch (error) {
       console.error('Compilation error:', error);
       throw error;
     }
   }
-  
+
   /**
    * Process a directory's content recursively
    * @param {string} dir - Directory to process
@@ -99,52 +108,58 @@ class MarkdownCompiler {
    */
   async processDirectoryContent(dir, level = 2, relativePath = '') {
     let content = '';
-    
+
     const entries = await fs.readdir(dir);
-    
+
     if (relativePath) {
       const dirName = path.basename(dir);
       content += `${'#'.repeat(Math.min(level, 6))} ${dirName}\n\n`;
     }
-    
-    const markdownFiles = entries.filter(entry =>
-      entry.endsWith('.md') && fs.statSync(path.join(dir, entry)).isFile()
+
+    const markdownFiles = entries.filter(
+      (entry) =>
+        entry.endsWith('.md') && fs.statSync(path.join(dir, entry)).isFile(),
     );
-    
+
     this.stats.totalFiles += markdownFiles.length;
-    
-    for (const file of markdownFiles) {
+
+    // Use traditional for loop for sequential async operations
+    for (let i = 0; i < markdownFiles.length; i += 1) {
+      const file = markdownFiles[i];
       const filePath = path.join(dir, file);
+      // eslint-disable-next-line no-await-in-loop
       const fileContent = await this.processFile(filePath);
-      
+
       if (fileContent) {
         content += fileContent;
-        this.stats.processedFiles++;
+        this.stats.processedFiles += 1;
       } else {
-        this.stats.skippedFiles++;
+        this.stats.skippedFiles += 1;
       }
     }
-    
-    const subdirs = entries.filter(entry =>
-      fs.statSync(path.join(dir, entry)).isDirectory()
+
+    const subdirs = entries.filter((entry) =>
+      fs.statSync(path.join(dir, entry)).isDirectory(),
     );
-    
-    for (const subdir of subdirs) {
+
+    // Use traditional for loop for sequential async operations
+    for (let i = 0; i < subdirs.length; i += 1) {
+      const subdir = subdirs[i];
       const subdirPath = path.join(dir, subdir);
       const newRelativePath = path.join(relativePath, subdir);
-      
+
+      // eslint-disable-next-line no-await-in-loop
       const subdirContent = await this.processDirectoryContent(
         subdirPath,
         level + 1,
-        newRelativePath
+        newRelativePath,
       );
-      
+
       content += subdirContent;
     }
-    
+
     return content;
   }
-
 
   /**
    * Process a markdown file
@@ -156,44 +171,44 @@ class MarkdownCompiler {
   async processFile(filePath) {
     try {
       const content = await fs.readFile(filePath, 'utf8');
-      
+
       const { frontmatter, markdown } = this.extractFrontmatter(content);
-      
+
       const cleanedContent = this.cleanupContent(markdown);
-      
+
       if (!cleanedContent.trim()) {
         return null;
       }
-      
+
       if (this.removeDuplicates) {
         const contentHash = this.hashContent(cleanedContent);
-        
+
         if (this.contentHashes.has(contentHash)) {
-          this.stats.duplicatesRemoved++;
+          this.stats.duplicatesRemoved += 1;
           return null;
         }
-        
+
         this.contentHashes.add(contentHash);
       }
-      
+
       const fileName = path.basename(filePath);
       let output = `#### ${fileName}\n\n`;
-      
+
       if (this.preserveMetadata && frontmatter) {
         if (frontmatter.url) {
           output += `> Source: ${frontmatter.url}\n`;
         }
-        
+
         if (frontmatter.scrapeDate) {
           const date = new Date(frontmatter.scrapeDate);
           output += `> Scraped: ${date.toLocaleString()}\n`;
         }
-        
+
         output += `\n`;
       }
-      
+
       output += `${cleanedContent}\n\n`;
-      
+
       return output;
     } catch (error) {
       console.error(`Error processing file ${filePath}:`, error);
@@ -206,10 +221,10 @@ class MarkdownCompiler {
    * @param {string} content - Raw file content
    * @returns {Object} Object with frontmatter and markdown
    */
-  extractFrontmatter(content) {
+  static extractFrontmatter(content) {
     const frontmatterRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/;
     const match = content.match(frontmatterRegex);
-    
+
     if (match) {
       try {
         const frontmatter = yaml.load(match[1]);
@@ -220,7 +235,7 @@ class MarkdownCompiler {
         return { frontmatter: null, markdown: content };
       }
     }
-    
+
     return { frontmatter: null, markdown: content };
   }
 
@@ -233,13 +248,12 @@ class MarkdownCompiler {
     let cleaned = content;
 
     if (this.removeNavigation) {
-      for (const pattern of this.excludePatterns) {
+      this.excludePatterns.forEach((pattern) => {
         cleaned = cleaned.replace(pattern, '');
-      }
+      });
     }
 
     cleaned = sharedCleanupMarkdown(cleaned);
-
 
     return cleaned;
   }
@@ -249,13 +263,13 @@ class MarkdownCompiler {
    * @param {string} content - Content to hash
    * @returns {string} Content hash
    */
-  hashContent(content) {
+  static hashContent(content) {
     const headings = [];
     const contentSections = [];
-    
+
     const headingMatches = content.match(/^#{1,3}\s+(.+)$/gm);
     if (headingMatches) {
-      headingMatches.forEach(heading => {
+      headingMatches.forEach((heading) => {
         const normalizedHeading = heading
           .replace(/^#+\s+/, '')
           .toLowerCase()
@@ -263,9 +277,9 @@ class MarkdownCompiler {
         headings.push(normalizedHeading);
       });
     }
-    
+
     const sections = content.split(/^#{1,3}\s+.+$/m);
-    sections.forEach(section => {
+    sections.forEach((section) => {
       if (section.trim()) {
         const normalizedSection = section
           .replace(/\s+/g, ' ')
@@ -275,20 +289,20 @@ class MarkdownCompiler {
           .replace(/[.,;:!?()[\]{}'"]/g, '')
           .toLowerCase()
           .trim();
-        
+
         if (normalizedSection) {
           contentSections.push(normalizedSection);
         }
       }
     });
-    
+
     const signature = {
-      headings: headings,
-      contentSections: contentSections
+      headings,
+      contentSections,
     };
-    
+
     const signatureStr = JSON.stringify(signature);
-    
+
     return crypto.createHash('md5').update(signatureStr).digest('hex');
   }
 }

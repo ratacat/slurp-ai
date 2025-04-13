@@ -10,13 +10,13 @@ import { scraping } from '../../config.js';
 const verbose = scraping.debug || process.argv.includes('--verbose');
 
 // Fallback for chalk if needed in certain environments
-const chalkFallback = { 
-  green: (s) => s, 
-  red: (s) => s, 
-  yellow: (s) => s, 
-  blue: (s) => s, 
+const chalkFallback = {
+  green: (s) => s,
+  red: (s) => s,
+  yellow: (s) => s,
+  blue: (s) => s,
   gray: (s) => s,
-  magenta: (s) => s
+  magenta: (s) => s,
 };
 
 // Use chalk if available, fallback otherwise
@@ -32,11 +32,11 @@ const log = {
    * @param {string} message - The message to log
    */
   start: (stage, message) => {
-    const emojiMap = { 
-      Scraping: '🔎', 
-      Compiling: '⚙️', 
-      Cleanup: '🧹', 
-      Init: '🚀' 
+    const emojiMap = {
+      Scraping: '🔎',
+      Compiling: '⚙️',
+      Cleanup: '🧹',
+      Init: '🚀',
     };
     console.error(`${emojiMap[stage] || 'ℹ️'} [${stage}] ${message}`);
   },
@@ -64,7 +64,9 @@ const log = {
    * @param {string} message - The warning message to log
    */
   warn: (stage, message) => {
-    console.error(chalkLib.yellow(`   ⚠️ ${stage ? `[${stage}] ` : ''}${message}`));
+    console.error(
+      chalkLib.yellow(`   ⚠️ ${stage ? `[${stage}] ` : ''}${message}`),
+    );
   },
 
   /**
@@ -73,7 +75,9 @@ const log = {
    * @param {string} message - The error message to log
    */
   error: (stage, message) => {
-    console.error(chalkLib.red(`   ❌ ${stage ? `[${stage}] ` : ''}${message}`));
+    console.error(
+      chalkLib.red(`   ❌ ${stage ? `[${stage}] ` : ''}${message}`),
+    );
   },
 
   /**
@@ -91,7 +95,8 @@ const log = {
    */
   verbose: (message) => {
     if (verbose) {
-      const msgString = typeof message === 'string' ? message : JSON.stringify(message);
+      const msgString =
+        typeof message === 'string' ? message : JSON.stringify(message);
       console.error(chalkLib.gray(`[VERBOSE] ${msgString}`));
     }
   },
@@ -101,9 +106,10 @@ const log = {
    * @param {*} message - The message to log
    */
   info: (message) => {
-    const msgString = typeof message === 'string' ? message : JSON.stringify(message);
+    const msgString =
+      typeof message === 'string' ? message : JSON.stringify(message);
     console.error(`   ${msgString}`);
-  }
+  },
 };
 
 export { log };

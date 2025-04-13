@@ -18,10 +18,7 @@ function resolvePath(relativePath, basePath) {
 
   // Handle home directory
   if (relativePath.startsWith('~')) {
-    return path.join(
-      os.homedir(),
-      relativePath.substring(1)
-    );
+    return path.join(os.homedir(), relativePath.substring(1));
   }
 
   // Resolve relative to base path

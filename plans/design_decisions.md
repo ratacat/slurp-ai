@@ -14,15 +14,18 @@ We have made a deliberate decision to route all log messages through stderr (`co
 ### Justifications
 
 1. **MCP Server Compatibility**
+
    - The Model Context Protocol (MCP) server has issues properly handling stdout output
    - Using stderr provides a more reliable communication channel with the MCP infrastructure
 
 2. **Clear Separation of Concerns**
+
    - Application data output (documentation content, search results, etc.) is kept on stdout
    - Operational/status messages (progress indicators, warnings, etc.) are isolated to stderr
    - This separation makes it easier to pipe only the relevant data to other tools
 
 3. **Error Highlighting in Terminals**
+
    - Most terminal environments apply distinctive formatting (often red text) to stderr output
    - This gives visual prominence to important operational messages
    - Helps debugging by making log messages stand out from normal command output
@@ -34,10 +37,12 @@ We have made a deliberate decision to route all log messages through stderr (`co
 ### Tradeoffs
 
 1. **Divergence from CLI Conventions**
+
    - This approach breaks from standard CLI conventions where stdout is typically used for normal output
    - May be considered non-standard by CLI purists
 
 2. **Test Modifications Required**
+
    - Required modifying existing tests that were originally written for `console.log`
    - Added some complexity to test fixtures and assertions
 

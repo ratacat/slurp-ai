@@ -76,47 +76,48 @@ You can customize SlurpAI's behavior by modifying the `config.js` file in the pr
 
 ### File System Paths
 
-| Property     | Default          | Description                                            |
-| ------------ | ---------------- | ------------------------------------------------------ |
-| `inputDir`   | `slurps_partials`| Directory for intermediate scraped markdown files      |
-| `outputDir`  | `slurps`         | Directory for the final compiled markdown file         |
-| `basePath`   | <targetUrl>      | Base path used for link filtering (if specified)       |
+| Property    | Default           | Description                                       |
+| ----------- | ----------------- | ------------------------------------------------- |
+| `inputDir`  | `slurps_partials` | Directory for intermediate scraped markdown files |
+| `outputDir` | `slurps`          | Directory for the final compiled markdown file    |
+| `basePath`  | <targetUrl>       | Base path used for link filtering (if specified)  |
 
 ### Web Scraping Settings
 
-| Property         | Default | Description                                            |
-| ---------------- | ------- | ------------------------------------------------------ |
-| `maxPagesPerSite`| `100`   | Maximum pages to scrape per site (0 for unlimited)     |
-| `concurrency`    | `25`    | Number of pages to process concurrently                |
-| `retryCount`     | `3`     | Number of times to retry failed requests               |
-| `retryDelay`     | `1000`  | Delay between retries in milliseconds                  |
-| `useHeadless`    | `false` | Whether to use a headless browser for JS-rendering     |
-| `timeout`        | `60000` | Request timeout in milliseconds                        |
+| Property          | Default | Description                                        |
+| ----------------- | ------- | -------------------------------------------------- |
+| `maxPagesPerSite` | `100`   | Maximum pages to scrape per site (0 for unlimited) |
+| `concurrency`     | `25`    | Number of pages to process concurrently            |
+| `retryCount`      | `3`     | Number of times to retry failed requests           |
+| `retryDelay`      | `1000`  | Delay between retries in milliseconds              |
+| `useHeadless`     | `false` | Whether to use a headless browser for JS-rendering |
+| `timeout`         | `60000` | Request timeout in milliseconds                    |
 
 ### URL Filtering
 
-| Property           | Default | Description                                           |
-| ------------------ | ------- | ----------------------------------------------------- |
-| `enforceBasePath`  | `true`  | Only follow links starting with the effective basePath|
-| `preserveQueryParams` | `['version', 'lang', 'theme']` | Query parameters to preserve when normalizing URLs |
+| Property              | Default                        | Description                                            |
+| --------------------- | ------------------------------ | ------------------------------------------------------ |
+| `enforceBasePath`     | `true`                         | Only follow links starting with the effective basePath |
+| `preserveQueryParams` | `['version', 'lang', 'theme']` | Query parameters to preserve when normalizing URLs     |
 
 ### Markdown Compilation
 
-| Property            | Default | Description                                          |
-| ------------------- | ------- | ---------------------------------------------------- |
-| `preserveMetadata`  | `true`  | Preserve metadata blocks in markdown                 |
-| `removeNavigation`  | `true`  | Remove navigation elements from content              |
-| `removeDuplicates`  | `true`  | Attempt to remove duplicate content sections         |
-| `similarityThreshold` | `0.9` | Threshold for considering content sections duplicates|
+| Property              | Default | Description                                           |
+| --------------------- | ------- | ----------------------------------------------------- |
+| `preserveMetadata`    | `true`  | Preserve metadata blocks in markdown                  |
+| `removeNavigation`    | `true`  | Remove navigation elements from content               |
+| `removeDuplicates`    | `true`  | Attempt to remove duplicate content sections          |
+| `similarityThreshold` | `0.9`   | Threshold for considering content sections duplicates |
 
 ### Base Path Explanation
 
-The main URL argument provided to `slurp` is the *starting point* for scraping. The optional `--base-path` flag defines a URL prefix used for *filtering* which discovered links are added to the scrape queue.
+The main URL argument provided to `slurp` is the _starting point_ for scraping. The optional `--base-path` flag defines a URL prefix used for _filtering_ which discovered links are added to the scrape queue.
 
-- If `--base-path` is **not** provided, it defaults to the starting URL, and Slurp will grab all pages that 
- include the starting url in their url string. Sometimes you may want to use different starting pages and base path.
+- If `--base-path` is **not** provided, it defaults to the starting URL, and Slurp will grab all pages that
+  include the starting url in their url string. Sometimes you may want to use different starting pages and base path.
 
 **Example:** To scrape only the `/docs/` section of a site BUT starting from the introduction page:
+
 ```bash
 # Modify config.js to set enforceBasePath to true
 # In config.js:
@@ -128,6 +129,7 @@ The main URL argument provided to `slurp` is the *starting point* for scraping. 
 # Then run the command
 slurp https://example.com/docs/introduction --base-path https://example.com/docs/
 ```
+
 In this case, links like `https://example.com/docs/advanced` would be followed, but `https://example.com/blog/post` would be ignored.
 This is often used if the base path itself returns a 404 when you try and load it.
 

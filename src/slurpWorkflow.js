@@ -4,7 +4,7 @@ import { URL } from 'url';
 import DocumentationScraper from './DocumentationScraper.js';
 import { MarkdownCompiler } from './MarkdownCompiler.js';
 import { log } from './utils/logger.js';
-import config, { paths, scraping, urlFiltering } from '../config.js';
+import { paths, scraping, urlFiltering, compilation } from '../config.js';
 
 /**
  * Extracts a base name from a URL, suitable for filenames/directory names.
@@ -17,12 +17,21 @@ function extractNameFromUrl(url) {
     const pathSegments = urlObj.pathname.split('/').filter(Boolean);
 
     if (pathSegments.length > 0) {
-      for (let i = pathSegments.length - 1; i >= 0; i--) {
-        const segment = pathSegments[i].replace(/\.[^/.]+$/, "");
-        if (!['docs', 'documentation', 'api', 'reference', 'guide', 'introduction', 'index', ''].includes(segment.toLowerCase())) {
-          return segment
-            .replace(/\$/g, 's')
-            .replace(/[^a-z0-9-]/gi, '');
+      for (let i = pathSegments.length - 1; i >= 0; i -= 1) {
+        const segment = pathSegments[i].replace(/\.[^/.]+$/, '');
+        if (
+          ![
+            'docs',
+            'documentation',
+            'api',
+            'reference',
+            'guide',
+            'introduction',
+            'index',
+            '',
+          ].includes(segment.toLowerCase())
+        ) {
+          return segment.replace(/\$/g, 's').replace(/[^a-z0-9-]/gi, '');
         }
       }
       return (pathSegments[pathSegments.length - 1] || 'index')
@@ -30,41 +39,41 @@ function extractNameFromUrl(url) {
         .replace(/[^a-z0-9-]/gi, '');
     }
 
-    const hostParts = urlObj.hostname.split('.');
-    
     const commonTLDs = ['com', 'org', 'net', 'io', 'dev'];
     const commonCCTLDs = ['co.uk', 'com.au', 'co.nz', 'org.uk'];
-    
+
     let domain = urlObj.hostname;
-    
-    for (const tld of commonTLDs) {
+
+    commonTLDs.some((tld) => {
       if (domain.endsWith(`.${tld}`)) {
         domain = domain.slice(0, -(tld.length + 1));
-        break;
+        return true;
       }
-    }
-    
-    for (const cctld of commonCCTLDs) {
+      return false;
+    });
+
+    commonCCTLDs.some((cctld) => {
       if (domain.endsWith(`.${cctld}`)) {
         domain = domain.slice(0, -(cctld.length + 1));
-        break;
+        return true;
       }
-    }
-    
+      return false;
+    });
+
     if (domain.includes('.')) {
       const parts = domain.split('.');
       domain = parts[parts.length - 1];
     }
-    
-    return domain
-      .replace(/\$/g, 's')
-      .replace(/[^a-z0-9-]/gi, '');
+
+    return domain.replace(/\$/g, 's').replace(/[^a-z0-9-]/gi, '');
   } catch (error) {
-    log.warn('Workflow', `Failed to extract name from URL "${url}": ${error.message}`);
+    log.warn(
+      'Workflow',
+      `Failed to extract name from URL "${url}": ${error.message}`,
+    );
     return `doc-${Date.now()}`;
   }
 }
-
 
 /**
  * Runs the complete Slurp workflow: scrape documentation from a URL and compile it.
@@ -94,7 +103,6 @@ async function runSlurpWorkflow(url, options = {}) {
   let progressCallback;
 
   try {
-    
     // --- Validate URL ---
     let urlObj;
     try {
@@ -106,15 +114,15 @@ async function runSlurpWorkflow(url, options = {}) {
 
     // --- Determine Paths ---
     const siteName = extractNameFromUrl(url);
-    const version = options.version;
+    const { version } = options;
 
     const basePartialsDir = options.partialsOutputDir || paths.inputDir;
     const compiledOutputDir = options.compiledOutputDir || paths.outputDir;
-    
+
     const absolutePartialsDir = path.isAbsolute(basePartialsDir)
       ? basePartialsDir
       : path.join(process.cwd(), basePartialsDir);
-      
+
     structuredPartialsDir = path.join(absolutePartialsDir, siteName);
     if (version) {
       structuredPartialsDir = path.join(structuredPartialsDir, version);
@@ -136,144 +144,200 @@ async function runSlurpWorkflow(url, options = {}) {
     const scrapeConfig = {
       baseUrl: url,
       basePath: options.basePath || url,
-      enforceBasePath: options.basePath !== undefined || urlFiltering.enforceBasePath,
+      enforceBasePath:
+        options.basePath !== undefined || urlFiltering.enforceBasePath,
       outputDir: structuredPartialsDir,
       maxPages: options.maxPages ?? scraping.maxPagesPerSite,
       useHeadless: options.useHeadless ?? !scraping.useHeadless,
       libraryInfo: {
         library: siteName,
         version: version || '',
-        sourceType: 'url'
+        sourceType: 'url',
       },
-      contentSelector: 'main, .content, .document, article, .documentation, .main-content',
-       excludeSelectors: [
-         'nav', '.navigation', '.sidebar', '.menu', '.toc',
-         'footer', '.footer', 'script', 'style', '.headerlink'
-       ],
+      contentSelector:
+        'main, .content, .document, article, .documentation, .main-content',
+      excludeSelectors: [
+        'nav',
+        '.navigation',
+        '.sidebar',
+        '.menu',
+        '.toc',
+        'footer',
+        '.footer',
+        'script',
+        'style',
+        '.headerlink',
+      ],
       allowedDomains: [urlObj.hostname],
       concurrency: options.concurrency ?? scraping.concurrency,
       retryCount: options.retryCount ?? scraping.retryCount,
       retryDelay: options.retryDelay ?? 1000,
-      getFilenameForUrl: function(pageUrl) {
-         try {
-           const pageUrlObj = new URL(pageUrl);
-           const pagePath = pageUrlObj.pathname;
-           if (pagePath === '/' || pagePath === '') return 'index.md';
-           const segments = pagePath.replace(/^\/|\/$/g, '').split('/');
-           let currentDir = this.outputDir;
-           for (let i = 0; i < segments.length - 1; i++) {
-             currentDir = path.join(currentDir, segments[i].replace(/[^a-z0-9_-]/gi, '_'));
-             fs.ensureDirSync(currentDir);
-           }
-           const lastSegment = segments[segments.length - 1] || 'index';
-           const filename = lastSegment.replace(/\.[^/.]+$/, "").replace(/[^a-z0-9_-]/gi, '_') + '.md';
-           const relativePath = segments.slice(0, -1).map(s => s.replace(/[^a-z0-9_-]/gi, '_')).join(path.sep);
-           return relativePath ? path.join(relativePath, filename) : filename;
-         } catch (error) {
-           log.warn('Workflow', `Error generating filename for ${pageUrl}: ${error.message}`);
-           return `page-${Date.now()}.md`;
-         }
-       },
-       signal: options.signal
+      getFilenameForUrl(pageUrl) {
+        try {
+          const pageUrlObj = new URL(pageUrl);
+          const pagePath = pageUrlObj.pathname;
+          if (pagePath === '/' || pagePath === '') return 'index.md';
+          const segments = pagePath.replace(/^\/|\/$/g, '').split('/');
+          let currentDir = this.outputDir;
+          for (let i = 0; i < segments.length - 1; i += 1) {
+            currentDir = path.join(
+              currentDir,
+              segments[i].replace(/[^a-z0-9_-]/gi, '_'),
+            );
+            fs.ensureDirSync(currentDir);
+          }
+          const lastSegment = segments[segments.length - 1] || 'index';
+          const filename = `${lastSegment
+            .replace(/\.[^/.]+$/, '')
+            .replace(/[^a-z0-9_-]/gi, '_')}.md`;
+          const relativePath = segments
+            .slice(0, -1)
+            .map((s) => s.replace(/[^a-z0-9_-]/gi, '_'))
+            .join(path.sep);
+          return relativePath ? path.join(relativePath, filename) : filename;
+        } catch (error) {
+          log.warn(
+            'Workflow',
+            `Error generating filename for ${pageUrl}: ${error.message}`,
+          );
+          return `page-${Date.now()}.md`;
+        }
+      },
+      signal: options.signal,
     };
 
-    log.verbose(`Base path config: baseUrl=${scrapeConfig.baseUrl}, basePath=${scrapeConfig.basePath}, enforceBasePath=${scrapeConfig.enforceBasePath}`);
+    log.verbose(
+      `Base path config: baseUrl=${scrapeConfig.baseUrl}, basePath=${scrapeConfig.basePath}, enforceBasePath=${scrapeConfig.enforceBasePath}`,
+    );
 
     scraper = new DocumentationScraper(scrapeConfig);
 
     // --- Run Scraper ---
-    log.start('Scraping', `Starting... (Concurrency: ${scrapeConfig.concurrency})`);
-    
+    log.start(
+      'Scraping',
+      `Starting... (Concurrency: ${scrapeConfig.concurrency})`,
+    );
+
     let processedCount = 0;
-    
+
     progressCallback = (data) => {
-        if (data.type === 'processing') {
-            processedCount++;
-            if (options.onProgress) {
-                options.onProgress(processedCount, undefined, `Scraping page ${processedCount}...`);
-            }
-            if (processedCount % 10 === 0 || processedCount === 1) {
-                log.progress(`Scraping page ${processedCount}/?...`);
-            }
-        } else if (data.type === 'failed') {
-            log.warn('Scraping', `Failed to scrape: ${data.url} - ${data.error}`);
+      if (data.type === 'processing') {
+        processedCount += 1;
+        if (options.onProgress) {
+          options.onProgress(
+            processedCount,
+            undefined,
+            `Scraping page ${processedCount}...`,
+          );
         }
+        if (processedCount % 10 === 0 || processedCount === 1) {
+          log.progress(`Scraping page ${processedCount}/?...`);
+        }
+      } else if (data.type === 'failed') {
+        log.warn('Scraping', `Failed to scrape: ${data.url} - ${data.error}`);
+      }
     };
-    
+
     scraper.on('progress', progressCallback);
-    
+
     // Export the progressCallback for testing
     if (process.env.NODE_ENV === 'test') {
-        runSlurpWorkflow.testProgressCallback = progressCallback;
+      runSlurpWorkflow.testProgressCallback = progressCallback;
     }
 
     const scrapeStats = await scraper.start();
-    log.success('Scraping', `Finished. Processed: ${scrapeStats.processed} pages, Failed: ${scrapeStats.failed} pages (${scrapeStats.duration.toFixed(1)}s)`);
+    log.success(
+      'Scraping',
+      `Finished. Processed: ${scrapeStats.processed} pages, Failed: ${scrapeStats.failed} pages (${scrapeStats.duration.toFixed(1)}s)`,
+    );
 
     if (scrapeStats.processed === 0) {
-        throw new Error("Scraping completed, but no pages were successfully processed. Cannot compile.");
+      throw new Error(
+        'Scraping completed, but no pages were successfully processed. Cannot compile.',
+      );
     }
 
     // --- Configure Compiler ---
     const compileOptions = {
       inputDir: structuredPartialsDir,
       outputFile: finalCompiledPath,
-      preserveMetadata: options.preserveMetadata ?? config.compilation.preserveMetadata,
-      removeNavigation: options.removeNavigation ?? config.compilation.removeNavigation,
-      removeDuplicates: options.removeDuplicates ?? config.compilation.removeDuplicates,
+      preserveMetadata:
+        options.preserveMetadata ?? compilation.preserveMetadata,
+      removeNavigation:
+        options.removeNavigation ?? compilation.removeNavigation,
+      removeDuplicates:
+        options.removeDuplicates ?? compilation.removeDuplicates,
     };
 
     const compiler = new MarkdownCompiler(compileOptions);
 
     // --- Run Compiler ---
-    log.start('Compiling', `Processing partials from ${path.relative(process.cwd(), structuredPartialsDir)}...`);
+    log.start(
+      'Compiling',
+      `Processing partials from ${path.relative(process.cwd(), structuredPartialsDir)}...`,
+    );
     const compileResult = await compiler.compile();
-    log.success('Compiling', `Finished. Output: ${path.relative(process.cwd(), compileResult.outputFile)} (${compileResult.stats.processedFiles} files processed)`);
+    log.success(
+      'Compiling',
+      `Finished. Output: ${path.relative(process.cwd(), compileResult.outputFile)} (${compileResult.stats.processedFiles} files processed)`,
+    );
     log.verbose(`Compiler Stats: ${JSON.stringify(compileResult.stats)}`);
 
     if (compileResult.stats.processedFiles === 0) {
-        log.warn('Compiling', "Compilation finished, but no files were processed.");
+      log.warn(
+        'Compiling',
+        'Compilation finished, but no files were processed.',
+      );
     }
 
-     // --- Cleanup Partials ---
-     const shouldDeletePartials = options.deletePartials ?? true;
-     if (shouldDeletePartials && compileResult.stats.processedFiles > 0) {
-       log.start('Cleanup', `Deleting partials directory: ${path.relative(process.cwd(), structuredPartialsDir)}...`);
-       await fs.remove(structuredPartialsDir);
-       log.verbose(`Partials directory deleted.`);
-     } else if (shouldDeletePartials) {
-         log.verbose(`Skipping partials deletion as no files were compiled.`);
-     }
+    // --- Cleanup Partials ---
+    const shouldDeletePartials = options.deletePartials ?? true;
+    if (shouldDeletePartials && compileResult.stats.processedFiles > 0) {
+      log.start(
+        'Cleanup',
+        `Deleting partials directory: ${path.relative(process.cwd(), structuredPartialsDir)}...`,
+      );
+      await fs.remove(structuredPartialsDir);
+      log.verbose(`Partials directory deleted.`);
+    } else if (shouldDeletePartials) {
+      log.verbose(`Skipping partials deletion as no files were compiled.`);
+    }
 
     // --- Final Success Message ---
-    log.final(`Slurp complete! Final output: ${path.relative(process.cwd(), finalCompiledPath)}`);
+    log.final(
+      `Slurp complete! Final output: ${path.relative(process.cwd(), finalCompiledPath)}`,
+    );
 
     // --- Return Success ---
     return {
       success: true,
-      compiledFilePath: path.relative(process.cwd(), finalCompiledPath)
+      compiledFilePath: path.relative(process.cwd(), finalCompiledPath),
     };
-
   } catch (error) {
     log.error('Workflow', `Slurp workflow failed: ${error.message}`);
     if (error.stack) {
-        log.verbose(error.stack);
+      log.verbose(error.stack);
     }
-    
+
     if (error.message.startsWith('Invalid URL provided:')) {
-        throw error;
+      throw error;
     }
-    
+
     if (structuredPartialsDir && (options.deletePartials ?? true)) {
-        try {
-            log.verbose(`Attempting cleanup of partials directory on error: ${structuredPartialsDir}`);
-            await fs.remove(structuredPartialsDir);
-            log.verbose(`Partials directory deleted during error cleanup.`);
-        } catch (cleanupError) {
-            log.warn('Cleanup', `Failed to cleanup partials directory during error handling: ${cleanupError.message}`);
-        }
+      try {
+        log.verbose(
+          `Attempting cleanup of partials directory on error: ${structuredPartialsDir}`,
+        );
+        await fs.remove(structuredPartialsDir);
+        log.verbose(`Partials directory deleted during error cleanup.`);
+      } catch (cleanupError) {
+        log.warn(
+          'Cleanup',
+          `Failed to cleanup partials directory during error handling: ${cleanupError.message}`,
+        );
+      }
     }
-    return { success: false, error: error };
+    return { success: false, error };
   }
 }
 export { runSlurpWorkflow, extractNameFromUrl };
