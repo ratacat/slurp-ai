@@ -9,7 +9,7 @@ SlurpAI is a CLI tool for scraping and compiling documentation from websites and
 - **Markdown Conversion**: Transforms HTML documentation into clean, structured markdown using Turndown.
 - **Content Cleanup**: Removes common navigation elements and other non-content sections.
 - **Compilation**: Combines content from scraped pages into a single output file.
-- **Configurable**: Options can be set via a `.env` file.
+- **Configurable**: Options can be set via the `config.js` file.
 - **Asynchronous**: Uses async/await for better performance and scalability.
 
 ## Prerequisites
@@ -72,45 +72,75 @@ When you run the URL scraping command, SlurpAI will:
 
 ## Configuration (Optional)
 
-You can customize SlurpAI's behavior by creating a `.env` file in the project root. Key options include:
+You can customize SlurpAI's behavior by modifying the `config.js` file in the project root. Configuration is organized into logical sections:
 
-| Variable                  | Default         | Description                                                              |
-| ------------------------- | --------------- | ------------------------------------------------------------------------ |
-| `SLURP_PARTIALS_DIR`      | `slurps_partials`| Directory for intermediate scraped markdown files                        |
-| `SLURP_COMPILED_DIR`      | `slurps`      | Directory for the final compiled markdown file                           |
-| `SLURP_MAX_PAGES_PER_SITE`| `100`            | Maximum pages to scrape per site (0 for unlimited)                       |
-| `SLURP_CONCURRENCY`       | `25`            | Number of pages to process concurrently                                  |
-| `SLURP_USE_HEADLESS`      | `true`          | Whether to use a headless browser (Puppeteer) for JS-rendered content    |
-| `SLURP_ENFORCE_BASE_PATH` | `false`         | If `true`, only follow links starting with the effective `--base-path`   |
-| `SLURP_REMOVE_DUPLICATES` | `true`          | Attempt to remove duplicate content sections during compilation          |
-| `SLURP_DELETE_PARTIALS`   | `true`          | Delete the intermediate partials directory after successful compilation  |
+### File System Paths
+
+| Property     | Default          | Description                                            |
+| ------------ | ---------------- | ------------------------------------------------------ |
+| `inputDir`   | `slurps_partials`| Directory for intermediate scraped markdown files      |
+| `outputDir`  | `slurps`         | Directory for the final compiled markdown file         |
+| `basePath`   | <targetUrl>      | Base path used for link filtering (if specified)       |
+
+### Web Scraping Settings
+
+| Property         | Default | Description                                            |
+| ---------------- | ------- | ------------------------------------------------------ |
+| `maxPagesPerSite`| `100`   | Maximum pages to scrape per site (0 for unlimited)     |
+| `concurrency`    | `25`    | Number of pages to process concurrently                |
+| `retryCount`     | `3`     | Number of times to retry failed requests               |
+| `retryDelay`     | `1000`  | Delay between retries in milliseconds                  |
+| `useHeadless`    | `false` | Whether to use a headless browser for JS-rendering     |
+| `timeout`        | `60000` | Request timeout in milliseconds                        |
+
+### URL Filtering
+
+| Property           | Default | Description                                           |
+| ------------------ | ------- | ----------------------------------------------------- |
+| `enforceBasePath`  | `true`  | Only follow links starting with the effective basePath|
+| `preserveQueryParams` | `['version', 'lang', 'theme']` | Query parameters to preserve when normalizing URLs |
+
+### Markdown Compilation
+
+| Property            | Default | Description                                          |
+| ------------------- | ------- | ---------------------------------------------------- |
+| `preserveMetadata`  | `true`  | Preserve metadata blocks in markdown                 |
+| `removeNavigation`  | `true`  | Remove navigation elements from content              |
+| `removeDuplicates`  | `true`  | Attempt to remove duplicate content sections         |
+| `similarityThreshold` | `0.9` | Threshold for considering content sections duplicates|
 
 ### Base Path Explanation
 
 The main URL argument provided to `slurp` is the *starting point* for scraping. The optional `--base-path` flag defines a URL prefix used for *filtering* which discovered links are added to the scrape queue.
 
-- If `--base-path` is **not** provided, it defaults to the starting URL.
-- This filtering only occurs if the `SLURP_ENFORCE_BASE_PATH` environment variable is set to `true`. By default, it is `false`, meaning all same-domain links are followed regardless of path.
+- If `--base-path` is **not** provided, it defaults to the starting URL, and Slurp will grab all pages that 
+ include the starting url in their url string. Sometimes you may want to use different starting pages and base path.
 
-**Example:** To scrape only the `/docs/` section of a site starting from the introduction page:
+**Example:** To scrape only the `/docs/` section of a site BUT starting from the introduction page:
 ```bash
-# Set environment variable (or put in .env)
-export SLURP_ENFORCE_BASE_PATH=true
-# Run the command
+# Modify config.js to set enforceBasePath to true
+# In config.js:
+# urlFiltering: {
+#   enforceBasePath: true,
+#   ...
+# }
+
+# Then run the command
 slurp https://example.com/docs/introduction --base-path https://example.com/docs/
 ```
 In this case, links like `https://example.com/docs/advanced` would be followed, but `https://example.com/blog/post` would be ignored.
+This is often used if the base path itself returns a 404 when you try and load it.
 
 ## MCP Server Integration
 
-SlurpAI can also be used as an MCP (Model Context Protocol) server, allowing AI agents to interact with documentation efficiently.
+SlurpAI MCP integration is coming.
 
 ## Contributing
 
 Issues and pull requests are welcome! Please feel free to contribute to this project:
 
-- Report issues: [https://github.com/jaredsmith/slurpai/issues](https://github.com/jaredsmith/slurpai/issues)
-- Project repository: [https://github.com/jaredsmith/slurpai](https://github.com/jaredsmith/slurpai)
+- Report issues: [https://github.com/ratacat/slurpai/issues](https://github.com/ratacat/slurpai/issues)
+- Project repository: [https://github.com/ratacat/slurpai](https://github.com/ratacat/slurpai)
 
 ## License
 
