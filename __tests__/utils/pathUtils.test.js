@@ -33,22 +33,21 @@ describe('resolvePath utility', () => {
 
   it('should resolve paths starting with ~ relative to the home directory', () => {
     expect(resolvePath('~/documents/file.txt', basePath)).toBe(
-      path.join(os.homedir(), 'documents/file.txt'),
+      path.join(os.homedir(), 'documents/file.txt')
     );
     expect(resolvePath('~/.config', basePath)).toBe(
-      path.join(os.homedir(), '.config'),
+      path.join(os.homedir(), '.config')
     );
   });
 
   it('should resolve relative paths against the base path', () => {
     expect(resolvePath('src/utils', basePath)).toBe(
-      path.join(basePath, 'src/utils'),
+      path.join(basePath, 'src/utils')
     );
-    expect(resolvePath('../data', basePath)).toBe(
-      path.join(basePath, '../data'),
-    ); // Resolves to /users/test/data
+    expect(resolvePath('../data', basePath)).toBe(path.join(basePath, '../data')); // Resolves to /users/test/data
     expect(resolvePath('./config.json', basePath)).toBe(
-      path.join(basePath, 'config.json'),
+      path.join(basePath, 'config.json')
     );
   });
+
 });

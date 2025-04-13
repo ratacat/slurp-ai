@@ -27,13 +27,14 @@ describe('cleanupMarkdown utility', () => {
     expect(cleanupMarkdown(input)).toBe(expected);
   });
 
-  it('should ensure exactly two newlines after a heading', () => {
+   it('should ensure exactly two newlines after a heading', () => {
     const input = '# Heading 1\n\n\nSome text.\n## Heading 2\nMore text.';
     const expected = '# Heading 1\n\nSome text.\n\n## Heading 2\n\nMore text.';
     // Note: The current regex might not perfectly enforce this in all cases,
     // but we test its current behavior. The rule `^(#{1,6}\s.*)\n{3,}` aims for this.
     expect(cleanupMarkdown(input)).toBe(expected);
   });
+
 
   it('should ensure single newline before list items, not double', () => {
     const input = 'Intro:\n\n\n* Item 1\n\n* Item 2';
@@ -118,8 +119,9 @@ Ending text.`;
   });
 
   it('should fix specific navigation link format with excessive whitespace', () => {
-    const input = '* [\n\n   Link Text\n\n\n\n  ](link.md)';
-    const expected = '* [Link Text](link.md)';
-    expect(cleanupMarkdown(input)).toBe(expected);
+     const input = '* [\n\n   Link Text\n\n\n\n  ](link.md)';
+     const expected = '* [Link Text](link.md)';
+     expect(cleanupMarkdown(input)).toBe(expected);
   });
+
 });
