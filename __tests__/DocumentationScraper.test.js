@@ -729,8 +729,8 @@ it('should handle output directory paths with options and config', () => {
       fs.ensureDir.mockClear().mockResolvedValue(undefined);
       fs.writeFile.mockClear().mockResolvedValue(undefined);
       
-      // Spy on getFilenameForUrl to ensure it's called correctly
-      vi.spyOn(scraper, 'getFilenameForUrl').mockReturnValue(expectedFilename);
+      // Spy on static getFilenameForUrl method
+      vi.spyOn(DocsToMarkdown, 'getFilenameForUrl').mockReturnValue(expectedFilename);
     });
 
     it('should save markdown with correct frontmatter to the base output directory', async () => {

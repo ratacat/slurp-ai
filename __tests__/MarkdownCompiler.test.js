@@ -161,7 +161,7 @@ This is the actual content.`;
 
       yamlMock.load.mockReturnValue(expectedFrontmatter);
 
-      const result = compiler.extractFrontmatter(content);
+      const result = MarkdownCompiler.extractFrontmatter(content);
 
       expect(yamlMock.load).toHaveBeenCalledWith('title: Test Document\nurl: https://example.com');
       expect(result.frontmatter).toEqual(expectedFrontmatter);
@@ -171,7 +171,7 @@ This is the actual content.`;
     it('should return null frontmatter if no frontmatter block exists', () => {
       const content = `# Markdown Content Only
 No frontmatter here.`;
-      const result = compiler.extractFrontmatter(content);
+      const result = MarkdownCompiler.extractFrontmatter(content);
 
       expect(yamlMock.load).not.toHaveBeenCalled();
       expect(result.frontmatter).toBeNull();
@@ -188,7 +188,7 @@ invalid: yaml: here
        // Mock console.error to suppress expected error message during test
        const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-       const result = compiler.extractFrontmatter(content);
+       const result = MarkdownCompiler.extractFrontmatter(content);
 
        expect(yamlMock.load).toHaveBeenCalledWith('invalid: yaml: here');
        expect(result.frontmatter).toBeNull();
@@ -206,7 +206,7 @@ invalid: yaml: here
       const expectedFrontmatter = {}; // Or null/undefined depending on yaml.load behavior for empty string
       yamlMock.load.mockReturnValue(expectedFrontmatter);
 
-      const result = compiler.extractFrontmatter(content);
+      const result = MarkdownCompiler.extractFrontmatter(content);
 
       expect(yamlMock.load).toHaveBeenCalledWith(''); // Called with empty string
       expect(result.frontmatter).toEqual(expectedFrontmatter);
@@ -225,8 +225,8 @@ invalid: yaml: here
 
     it('should generate the same hash for identical content', () => {
       const content = '# Heading\n\nSome text.';
-      const hash1 = compiler.hashContent(content);
-      const hash2 = compiler.hashContent(content);
+      const hash1 = MarkdownCompiler.hashContent(content);
+      const hash2 = MarkdownCompiler.hashContent(content);
       expect(hash1).toBe(hash2);
       expect(hash1).toMatch(/^[a-f0-9]{32}$/); // MD5 hash format
     });
@@ -234,16 +234,16 @@ invalid: yaml: here
     it('should generate the same hash for content differing only in whitespace or markdown syntax', () => {
       const content1 = '# Heading\n\nSome *bold* text.';
       const content2 = '  #    Heading\n\n\n   Some **bold** text.  '; // Extra space, different bold
-      const hash1 = compiler.hashContent(content1);
-      const hash2 = compiler.hashContent(content2);
+      const hash1 = MarkdownCompiler.hashContent(content1);
+      const hash2 = MarkdownCompiler.hashContent(content2);
       expect(hash1).toBe(hash2);
     });
 
     it('should generate the same hash for content differing only in non-major punctuation', () => {
         const content1 = '# Heading!\n\nSome text?';
         const content2 = '# Heading\n\nSome text';
-        const hash1 = compiler.hashContent(content1);
-        const hash2 = compiler.hashContent(content2);
+        const hash1 = MarkdownCompiler.hashContent(content1);
+        const hash2 = MarkdownCompiler.hashContent(content2);
         expect(hash1).toBe(hash2);
     });
 
@@ -251,42 +251,42 @@ invalid: yaml: here
     it('should generate different hashes for different content', () => {
       const content1 = '# Heading 1\n\nText A';
       const content2 = '# Heading 2\n\nText B';
-      const hash1 = compiler.hashContent(content1);
-      const hash2 = compiler.hashContent(content2);
+      const hash1 = MarkdownCompiler.hashContent(content1);
+      const hash2 = MarkdownCompiler.hashContent(content2);
       expect(hash1).not.toBe(hash2);
     });
 
      it('should generate different hashes if headings differ', () => {
       const content1 = '# Heading 1\n\nText';
       const content2 = '## Heading 1\n\nText'; // Different level
-      const hash1 = compiler.hashContent(content1);
-      const hash2 = compiler.hashContent(content2);
+      const hash1 = MarkdownCompiler.hashContent(content1);
+      const hash2 = MarkdownCompiler.hashContent(content2);
       // Note: Current hashing only considers h1-h3. If h4+ differs, hash might be same.
       // Let's test h1 vs h2
       expect(hash1).not.toBe(hash2);
 
       const content3 = '# Heading A\n\nText';
       const content4 = '# Heading B\n\nText'; // Different text
-      const hash3 = compiler.hashContent(content3);
-      const hash4 = compiler.hashContent(content4);
+      const hash3 = MarkdownCompiler.hashContent(content3);
+      const hash4 = MarkdownCompiler.hashContent(content4);
       expect(hash3).not.toBe(hash4);
     });
 
     it('should generate different hashes if content sections differ significantly', () => {
         const content1 = '# H\nSection 1';
         const content2 = '# H\nSection 2';
-        const hash1 = compiler.hashContent(content1);
-        const hash2 = compiler.hashContent(content2);
+        const hash1 = MarkdownCompiler.hashContent(content1);
+        const hash2 = MarkdownCompiler.hashContent(content2);
         expect(hash1).not.toBe(hash2);
     });
 
     it('should handle content with no headings', () => {
         const content = 'Just plain text. No headings here.';
-        const hash = compiler.hashContent(content);
+        const hash = MarkdownCompiler.hashContent(content);
         expect(hash).toMatch(/^[a-f0-9]{32}$/);
-        const hash2 = compiler.hashContent('Just plain text. No headings here.');
+        const hash2 = MarkdownCompiler.hashContent('Just plain text. No headings here.');
         expect(hash).toBe(hash2);
-        const hash3 = compiler.hashContent('Different plain text.');
+        const hash3 = MarkdownCompiler.hashContent('Different plain text.');
         expect(hash).not.toBe(hash3);
     });
   });
@@ -357,7 +357,7 @@ invalid: yaml: here
       // Spy on methods within the compiler instance
       vi.spyOn(compiler, 'extractFrontmatter').mockReturnValue({ frontmatter, markdown: markdownBody });
       vi.spyOn(compiler, 'cleanupContent').mockImplementation(content => content); // Simple pass-through mock
-      vi.spyOn(compiler, 'hashContent').mockReturnValue('unique_hash_1');
+      vi.spyOn(MarkdownCompiler, 'hashContent').mockReturnValue('unique_hash_1');
     });
 
     it('should read file, extract frontmatter, clean content, and format output', async () => {
@@ -366,7 +366,7 @@ invalid: yaml: here
       expect(fsMock.readFile).toHaveBeenCalledWith(filePath, 'utf8');
       expect(compiler.extractFrontmatter).toHaveBeenCalledWith(fileContent);
       expect(compiler.cleanupContent).toHaveBeenCalledWith(markdownBody);
-      expect(compiler.hashContent).toHaveBeenCalledWith(markdownBody); // Called for duplicate check
+      expect(MarkdownCompiler.hashContent).toHaveBeenCalledWith(markdownBody); // Called for duplicate check
 
       expect(result).toContain(`#### ${fileName}\n\n`);
       expect(result).toContain(`> Source: ${frontmatter.url}\n`);
@@ -379,7 +379,7 @@ invalid: yaml: here
         // Re-spy after creating new instance
         vi.spyOn(compiler, 'extractFrontmatter').mockReturnValue({ frontmatter, markdown: markdownBody });
         vi.spyOn(compiler, 'cleanupContent').mockImplementation(content => content);
-        vi.spyOn(compiler, 'hashContent').mockReturnValue('unique_hash_1');
+        vi.spyOn(MarkdownCompiler, 'hashContent').mockReturnValue('unique_hash_1');
 
         const result = await compiler.processFile(filePath);
 
@@ -394,7 +394,7 @@ invalid: yaml: here
         fsMock.readFile.mockResolvedValue(noFrontmatterContent);
         vi.spyOn(compiler, 'extractFrontmatter').mockReturnValue({ frontmatter: null, markdown: noFrontmatterContent });
         vi.spyOn(compiler, 'cleanupContent').mockImplementation(content => content);
-        vi.spyOn(compiler, 'hashContent').mockReturnValue('unique_hash_2');
+        vi.spyOn(MarkdownCompiler, 'hashContent').mockReturnValue('unique_hash_2');
 
 
         const result = await compiler.processFile(filePath);
@@ -412,7 +412,7 @@ invalid: yaml: here
       const result = await compiler.processFile(filePath);
 
       expect(compiler.cleanupContent).toHaveBeenCalledWith(markdownBody);
-      expect(compiler.hashContent).not.toHaveBeenCalled(); // Should not hash empty content
+      expect(MarkdownCompiler.hashContent).not.toHaveBeenCalled(); // Should not hash empty content
       expect(result).toBeNull();
     });
 
@@ -608,24 +608,24 @@ invalid: yaml: here
 
     it('should return null and increment duplicate count if content hash exists (and removeDuplicates is true)', async () => {
       compiler.contentHashes.add('existing_hash');
-      vi.spyOn(compiler, 'hashContent').mockReturnValue('existing_hash');
+      vi.spyOn(MarkdownCompiler, 'hashContent').mockReturnValue('existing_hash');
 
       const initialDuplicates = compiler.stats.duplicatesRemoved;
       const result = await compiler.processFile(filePath);
 
-      expect(compiler.hashContent).toHaveBeenCalledWith(markdownBody);
+      expect(MarkdownCompiler.hashContent).toHaveBeenCalledWith(markdownBody);
       expect(result).toBeNull();
       expect(compiler.stats.duplicatesRemoved).toBe(initialDuplicates + 1);
     });
 
     it('should process file and add hash if content hash does not exist (and removeDuplicates is true)', async () => {
-       vi.spyOn(compiler, 'hashContent').mockReturnValue('new_unique_hash');
+       vi.spyOn(MarkdownCompiler, 'hashContent').mockReturnValue('new_unique_hash');
        const initialDuplicates = compiler.stats.duplicatesRemoved;
 
        expect(compiler.contentHashes.has('new_unique_hash')).toBe(false);
        const result = await compiler.processFile(filePath);
 
-       expect(compiler.hashContent).toHaveBeenCalledWith(markdownBody);
+       expect(MarkdownCompiler.hashContent).toHaveBeenCalledWith(markdownBody);
        expect(result).not.toBeNull();
        expect(compiler.contentHashes.has('new_unique_hash')).toBe(true);
        expect(compiler.stats.duplicatesRemoved).toBe(initialDuplicates); // Not incremented
@@ -636,12 +636,12 @@ invalid: yaml: here
         // Re-spy
         vi.spyOn(compiler, 'extractFrontmatter').mockReturnValue({ frontmatter, markdown: markdownBody });
         vi.spyOn(compiler, 'cleanupContent').mockImplementation(content => content);
-        vi.spyOn(compiler, 'hashContent').mockReturnValue('some_hash'); // Mock hash call
+        vi.spyOn(MarkdownCompiler, 'hashContent').mockReturnValue('some_hash'); // Mock hash call
 
         const initialHashCount = compiler.contentHashes.size;
         const result = await compiler.processFile(filePath);
 
-        expect(compiler.hashContent).not.toHaveBeenCalled(); // Duplicate check skipped
+        expect(MarkdownCompiler.hashContent).not.toHaveBeenCalled(); // Duplicate check skipped
         expect(result).not.toBeNull();
         expect(compiler.contentHashes.size).toBe(initialHashCount); // No hash added
     });
@@ -661,7 +661,7 @@ invalid: yaml: here
        const content = `---
 title: Test
 # Markdown Content`; // Missing closing ---
-       const result = compiler.extractFrontmatter(content);
+       const result = MarkdownCompiler.extractFrontmatter(content);
 
        expect(yamlMock.load).not.toHaveBeenCalled();
        expect(result.frontmatter).toBeNull();

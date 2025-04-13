@@ -172,7 +172,7 @@ class MarkdownCompiler {
     try {
       const content = await fs.readFile(filePath, 'utf8');
 
-      const { frontmatter, markdown } = this.extractFrontmatter(content);
+      const { frontmatter, markdown } = MarkdownCompiler.extractFrontmatter(content);
 
       const cleanedContent = this.cleanupContent(markdown);
 
@@ -181,7 +181,7 @@ class MarkdownCompiler {
       }
 
       if (this.removeDuplicates) {
-        const contentHash = this.hashContent(cleanedContent);
+        const contentHash = MarkdownCompiler.hashContent(cleanedContent);
 
         if (this.contentHashes.has(contentHash)) {
           this.stats.duplicatesRemoved += 1;

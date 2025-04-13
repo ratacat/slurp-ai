@@ -337,6 +337,10 @@ class DocsToMarkdown extends EventEmitter {
    * Configure the Turndown service with custom rules
    */
   configureTurndown() {
+    // Setup global references for use in Turndown rules
+    globalThis.baseUrl = this.baseUrl;
+    globalThis.allowedDomains = this.allowedDomains;
+    globalThis.getFilenameForUrl = DocsToMarkdown.getFilenameForUrl;
     this.turndownService.addRule('codeBlock', {
       filter: ['pre'],
       replacement(content, node) {
@@ -900,7 +904,7 @@ class DocsToMarkdown extends EventEmitter {
    * @param {boolean} options.exactVersionMatch - Whether the version is an exact match
    */
   async saveMarkdown(url, markdown, options = {}) {
-    const filename = this.getFilenameForUrl(url);
+    const filename = DocsToMarkdown.getFilenameForUrl(url);
 
     let outputDir = resolvePath(this.outputDir, this.basePath);
 
