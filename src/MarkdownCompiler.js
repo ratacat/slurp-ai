@@ -22,8 +22,9 @@ class MarkdownCompiler {
     this.basePath = options.basePath || process.env.SLURP_BASE_PATH || process.cwd();
     // Default input dir is slurp_partials
     this.inputDir = resolvePath(options.inputDir || process.env.SLURP_INPUT_DIR || 'slurp_partials', this.basePath);
-    // Default output file is slurp_compiled/compiled_docs.md
-    this.outputFile = resolvePath(options.outputFile || path.join('slurp_compiled', 'compiled_docs.md'), this.basePath);
+    // Default output file path using environment variables or hardcoded default
+    const outputDir = process.env.SLURP_OUTPUT_DIR || process.env.SLURP_COMPILED_DIR || 'slurp_compiled';
+    this.outputFile = resolvePath(options.outputFile || path.join(outputDir, 'compiled_docs.md'), this.basePath);
     
     this.preserveMetadata = options.preserveMetadata !== undefined ?
       options.preserveMetadata :

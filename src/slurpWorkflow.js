@@ -121,7 +121,7 @@ async function runSlurpWorkflow(url, options = {}) {
 
     // Determine base directories
     const basePartialsDir = options.partialsOutputDir || process.env.SLURP_PARTIALS_DIR || 'slurp_partials';
-    const compiledOutputDir = options.compiledOutputDir || process.env.SLURP_COMPILED_DIR || 'compiled';
+    const compiledOutputDir = options.compiledOutputDir || process.env.SLURP_OUTPUT_DIR || process.env.SLURP_COMPILED_DIR || 'compiled';
     
     // Create absolute paths using process.cwd()
     const absolutePartialsDir = path.isAbsolute(basePartialsDir)

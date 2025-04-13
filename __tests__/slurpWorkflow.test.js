@@ -64,7 +64,8 @@ describe('slurpWorkflow', () => {
 
     // Mock environment variables
     process.env.SLURP_PARTIALS_DIR = 'slurp_partials_env';
-    process.env.SLURP_COMPILED_DIR = 'compiled_env';
+    process.env.SLURP_OUTPUT_DIR = 'compiled_env'; // Primary env var for output dir
+    process.env.SLURP_COMPILED_DIR = 'compiled_env_fallback'; // Should not be used if SLURP_OUTPUT_DIR is set
     process.env.SLURP_DELETE_PARTIALS = 'true'; // Default to true for cleanup tests
      // Mock process.cwd() for default path calculations - this is critical for path expectations
      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/test/base');
@@ -72,6 +73,7 @@ describe('slurpWorkflow', () => {
 
    afterEach(() => {
      delete process.env.SLURP_PARTIALS_DIR;
+     delete process.env.SLURP_OUTPUT_DIR;
      delete process.env.SLURP_COMPILED_DIR;
      delete process.env.SLURP_DELETE_PARTIALS;
      vi.restoreAllMocks(); // Restore process.cwd etc.
