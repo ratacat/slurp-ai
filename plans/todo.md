@@ -6,6 +6,6 @@
 6) [ ] Design a command & process for locating a doc site via web search based on string / version number instead of url.
 7) [ ] Build a command for looking up exact code from an installed NPM package and converting the entire thing to function signatures to compile to a doc.
 8) [ ] Get log levels working properly
-9) [ ] Work on naming
-10) [ ] Fix deprecation warnings without using a bash file /=
+9) [ ] Work on naming ?
+10) [x] Fix deprecation warnings without using a bash file /=
 11) [ ] Get working on lower versions of node
