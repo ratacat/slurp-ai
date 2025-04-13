@@ -3,8 +3,8 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import { runSlurpWorkflow } from './slurpWorkflow.js'; // Adjusted path
-import { MarkdownCompiler } from './MarkdownCompiler.js'; // Adjusted path
+import { runSlurpWorkflow } from './slurpWorkflow.js';
+import { MarkdownCompiler } from './MarkdownCompiler.js';
 import { log } from './utils/logger.js';
 import config, { paths, scraping, urlFiltering, compilation } from '../config.js';
 
@@ -18,11 +18,9 @@ const __dirname = dirname(__filename);
  * Finds package documentation by name and version, then scrapes it into a structured format
  */
 
-// Logging configuration
 const verbose = false; // Default to false, can be overridden by command line args (--verbose flag)
 
 /**
- * Logging utility functions
  */
 
 async function main() {
@@ -144,7 +142,6 @@ async function main() {
         const fetchOptions = {
           version: params.version // Will be undefined if not passed
         };
-        // Debug log removed
         // Prepare general workflow options based on params (similar to direct URL mode)
         const generalWorkflowOptions = {
           maxPages: params.max ? parseInt(params.max, 10) : undefined,
@@ -156,7 +153,6 @@ async function main() {
           basePath: params['base-path'] || fetchArg, // Default to fetchArg (the url) if --base-path is not provided
         };
         const result = await runSlurpWorkflow(fetchArg, { ...generalWorkflowOptions, ...fetchOptions }); // Combine general and fetch-specific options
-        // Success message now handled by slurpWorkflow.js
       } else {
         // Package name provided, but package fetching via DocSlurper is removed.
         log.error('CLI', 'Fetching documentation by package name is disabled.');
@@ -176,7 +172,6 @@ async function main() {
         basePath: params['base-path'],
         // Use hardcoded value to match test expectations
         inputDir: params.input || path.join(process.cwd(), 'slurp_partials'), // Hardcoded to 'slurp_partials' to match test expectations
-        // Default output file path
         outputFile: params.output, // Pass CLI flag value; let MarkdownCompiler handle default if null/undefined
         preserveMetadata: params['preserve-metadata'] !== undefined
           ? params['preserve-metadata'] !== 'false'
@@ -200,11 +195,9 @@ async function main() {
       }
       
       try {
-        // Create compiler instance
         // Debug logs removed
         const compiler = new MarkdownCompiler(compileOptions);
         
-        // Run compilation
         const result = await compiler.compile();
         
         // Most output details now handled by slurpWorkflow.js

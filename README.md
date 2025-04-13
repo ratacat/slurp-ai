@@ -69,14 +69,12 @@ You can customize SlurpAI's behavior by creating a `.env` file in the project ro
 | `SLURP_REMOVE_DUPLICATES` | `true`          | Attempt to remove duplicate content sections during compilation          |
 ## Todo
 
-- Check default values without .env and see what happens. Probably could be better.
-    - currently SLURP_OUTPUT_DIR seems to be ignored and it's using 'compiled'
 - Better logging around how many pages detected and accepted/denied and why.
 - [x] Support separate parameters for `scrape_start_url` (main argument) and `--base-path`. Some sites require a distinction (e.g., `slurp https://mcp-framework.com/docs/introduction --base-path https://mcp-framework.com/docs/`). The `--base-path` is used for filtering links if `SLURP_ENFORCE_BASE_PATH=true`.
 - Allow slurp to accept multiple urls to account and compile different folders if necessary in a single call.
 - Build a command for locating a doc site via web search based on string / version number instead of url.
 - Build a command for looking up exact code from an installed NPM package and converting the entire thing to function signatures to compile to a doc.
-- Add MCP server.
+- Add as MCP server.
 
 
 

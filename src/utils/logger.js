@@ -46,7 +46,7 @@ const log = {
    * @param {string} message - The progress message to log
    */
   progress: (message) => {
-    console.error(chalkLib.blue(`   ➡️ ${message}`)); // Indented progress
+    console.error(chalkLib.blue(`   ➡️ ${message}`));
   },
 
   /**
@@ -55,7 +55,7 @@ const log = {
    * @param {string} message - The success message to log
    */
   success: (stage, message) => {
-    console.error(chalkLib.green(`   ✅ [${stage}] ${message}`)); // Indented success
+    console.error(chalkLib.green(`   ✅ [${stage}] ${message}`));
   },
 
   /**
@@ -64,7 +64,7 @@ const log = {
    * @param {string} message - The warning message to log
    */
   warn: (stage, message) => {
-    console.error(chalkLib.yellow(`   ⚠️ ${stage ? `[${stage}] ` : ''}${message}`)); // Indented warning
+    console.error(chalkLib.yellow(`   ⚠️ ${stage ? `[${stage}] ` : ''}${message}`));
   },
 
   /**
@@ -73,7 +73,7 @@ const log = {
    * @param {string} message - The error message to log
    */
   error: (stage, message) => {
-    console.error(chalkLib.red(`   ❌ ${stage ? `[${stage}] ` : ''}${message}`)); // Indented error to stderr
+    console.error(chalkLib.red(`   ❌ ${stage ? `[${stage}] ` : ''}${message}`));
   },
 
   /**
@@ -81,7 +81,7 @@ const log = {
    * @param {string} message - The final success message to log
    */
   final: (message) => {
-    console.error(chalkLib.magenta(`\n✨ ${message}`)); // Final success message
+    console.error(chalkLib.magenta(`\n✨ ${message}`));
   },
 
   /**
@@ -102,7 +102,7 @@ const log = {
    */
   info: (message) => {
     const msgString = typeof message === 'string' ? message : JSON.stringify(message);
-    console.error(`   ${msgString}`); // Indented info message
+    console.error(`   ${msgString}`);
   }
 };
 

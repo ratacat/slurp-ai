@@ -59,7 +59,6 @@ class DocsToMarkdown extends EventEmitter {
       options.useHeadless :
       !scraping.useHeadless;
     
-    // this.baseUrlPath = this.baseUrlObj.pathname; // Removed - logic now uses full basePath string
     this.enforceBasePath = options.enforceBasePath !== undefined ?
       options.enforceBasePath :
       urlFiltering.enforceBasePath;
@@ -242,9 +241,8 @@ class DocsToMarkdown extends EventEmitter {
       failed: 0,
       startTime: null,
       endTime: null
-    }; // End of this.stats initialization
-    // Logger is now imported, no need to define it here
-    this.signal = options.signal; // Store the signal
+    };
+    this.signal = options.signal;
 
     // Add listener to stop queue if signal is aborted externally
     this.signal?.addEventListener('abort', () => {
@@ -432,7 +430,6 @@ class DocsToMarkdown extends EventEmitter {
    * Start the scraping process
    */
   async start() {
-    // Check signal before starting
     if (this.signal?.aborted) {
       log.warn('Scraping', 'Scrape aborted before starting.');
       throw new Error('Scrape aborted');
@@ -455,28 +452,25 @@ class DocsToMarkdown extends EventEmitter {
     log.verbose(`Waiting for scraping phase to complete... Initial Queue Size: ${this.queue.size}, Pending: ${this.queue.pending}`);
 
     
-    const checkInterval = 2000; // Check every 2 seconds
+    const checkInterval = 2000;
     const internalTimeout = scraping.timeout;
     const hangTimeout = internalTimeout * 1.5; // Timeout if no progress for 1.5x task timeout
     let lastProcessedCount = -1;
     let lastProgressTime = Date.now();
     
     while (this.queue.size > 0 || this.queue.pending > 0) {
-      await new Promise(resolve => setTimeout(resolve, checkInterval)); // Wait for interval
+      await new Promise(resolve => setTimeout(resolve, checkInterval));
       
       log.verbose(`Queue Check - Size: ${this.queue.size}, Pending: ${this.queue.pending}, Processed: ${this.stats.processed}`);
       
       if (this.stats.processed > lastProcessedCount) {
-        // Progress was made
         lastProcessedCount = this.stats.processed;
         lastProgressTime = Date.now();
       } else {
-        // No progress since last check
         if (Date.now() - lastProgressTime > hangTimeout) {
           log.warn('Scraping', `No progress for ${hangTimeout / 1000}s. Assuming hung tasks. Proceeding...`);
-          // Optionally, try stopping the queue forcefully here if needed, but let's see if breaking is enough
           // this.queue.stop();
-          break; // Exit the loop
+          break;
         }
       }
     }
@@ -525,9 +519,7 @@ class DocsToMarkdown extends EventEmitter {
    * @returns {boolean} Whether the URL was added to the queue
    */
   addToQueue(url, browser) {
-    // Check signal before adding to queue
     if (this.signal?.aborted) {
-      // log.debug(`Skipping add to queue for ${url} - scrape aborted.`);
       return false;
     }
 
@@ -536,11 +528,10 @@ class DocsToMarkdown extends EventEmitter {
     }
     
     if (this.hasReachedMaxPages()) {
-      // Only log this message once
       if (this.getTotalPageCount() === this.maxPages) {
          log.verbose(`Reached maximum of ${this.maxPages} pages. No longer adding new URLs to the queue.`);
       }
-      return false; // Don't add this URL
+      return false;
     }
     
     this.queuedUrls.add(url);
@@ -549,14 +540,13 @@ class DocsToMarkdown extends EventEmitter {
     const internalTimeout = scraping.timeout;
     const taskTimeout = internalTimeout + 5000; // Task timeout slightly longer than internal
     this.queue.add(async () => {
-      // Check signal at the beginning of task execution
       if (this.signal?.aborted) {
         log.verbose(`Task for ${url} cancelled before execution.`);
         this.queuedUrls.delete(url); // Ensure it's removed if cancelled before starting
         throw new Error('Scrape aborted');
       }
 
-      const taskId = `Task-${url.substring(url.lastIndexOf('/') + 1)}`; // Simple ID for logging
+      const taskId = `Task-${url.substring(url.lastIndexOf('/') + 1)}`;
       try {
         log.verbose(`${taskId}: Starting execution.`);
         this.queuedUrls.delete(url);
@@ -571,17 +561,16 @@ class DocsToMarkdown extends EventEmitter {
           inProgress: this.inProgressUrls.size
         });
 
-        // Check signal before fetching
         if (this.signal?.aborted) throw new Error('Scrape aborted');
 
         let html;
         log.verbose(`${taskId}: Fetching content (headless=${this.useHeadless})...`);
-        if (this.useHeadless && browser) { // Ensure browser exists if headless is true
+        if (this.useHeadless && browser) {
           const page = await browser.newPage();
           let pageError = null;
           try {
-              await page.setDefaultNavigationTimeout(60000); // Using 60s timeout
-              await page.goto(url, { waitUntil: 'networkidle2' }); // Using networkidle2
+              await page.setDefaultNavigationTimeout(60000);
+              await page.goto(url, { waitUntil: 'networkidle2' });
               html = await page.content();
               log.verbose(`${taskId}: Puppeteer fetch successful.`);
           } catch (err) {
@@ -592,7 +581,7 @@ class DocsToMarkdown extends EventEmitter {
                   await page.close();
               }
           }
-          if (pageError) throw pageError; // Re-throw if error occurred
+          if (pageError) throw pageError;
         } else {
            log.verbose(`${taskId}: Using axios.`);
            const response = await axios.get(url, {
@@ -600,7 +589,7 @@ class DocsToMarkdown extends EventEmitter {
              headers: {
                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
              }
-           }, { timeout: taskTimeout }); // Add timeout option to the queue task
+           }, { timeout: taskTimeout });
            html = response.data;
            log.verbose(`${taskId}: Axios fetch successful.`);
         }
@@ -621,7 +610,6 @@ class DocsToMarkdown extends EventEmitter {
            log.verbose(`${taskId}: Max pages reached, not adding extracted links.`);
         }
 
-        // Check signal before processing
         if (this.signal?.aborted) throw new Error('Scrape aborted');
 
         log.verbose(`${taskId}: Processing page content...`);
@@ -633,10 +621,9 @@ class DocsToMarkdown extends EventEmitter {
         log.verbose(`${taskId}: Marked as visited. Processed count: ${this.stats.processed}`);
         
       } catch (error) {
-        // Log the specific error for this task
         log.verbose(`${taskId}: Error caught - ${error.message}`);
         log.verbose(`Error processing ${url}: ${error.message}`);
-        log.error('Scraping', `Failed to process ${url}: ${error.message}`); // User-facing error with logger
+        log.error('Scraping', `Failed to process ${url}: ${error.message}`);
         this.stats.failed++;
       } finally {
         // This block MUST execute to ensure the task is removed from the inProgress set
@@ -676,7 +663,7 @@ class DocsToMarkdown extends EventEmitter {
     
     let markdown = this.turndownService.turndown(content.html() || '');
     
-    markdown = this.cleanupMarkdown(markdown); // Calls the method which now uses shared + specific cleanup
+    markdown = this.cleanupMarkdown(markdown);
     
     await this.saveMarkdown(url, markdown, this.libraryInfo);
   }
@@ -689,32 +676,27 @@ class DocsToMarkdown extends EventEmitter {
    */
   preprocessUrl(url, sourceUrl) {
     try {
-      // Parse URLs
       const urlObj = new URL(url);
       const sourceUrlObj = new URL(sourceUrl);
       
       urlObj.hash = '';
       
       if (!this.allowedDomains.includes(urlObj.hostname)) {
-        // console.log(`Skipping URL ${url} - domain not allowed`);
         return null;
       }
 
-      // Add the new base path enforcement logic here
       if (this.enforceBasePath) {
-        const urlString = urlObj.toString(); // Use the normalized URL
+        const urlString = urlObj.toString();
         if (!urlString.startsWith(this.basePath)) {
           log.verbose(`Skipping URL ${urlString} - doesn't start with enforced base path ${this.basePath}`);
           return null;
         }
       }
       
-      // Removed old enforceBasePath check block that used baseUrlPath
       
       const path = urlObj.pathname.toLowerCase();
       for (const pattern of this.urlBlacklist) {
         if (path.includes(pattern.toLowerCase())) {
-          // console.log(`Skipping URL ${url} - matches blacklist pattern ${pattern}`);
           return null;
         }
       }
@@ -723,7 +705,6 @@ class DocsToMarkdown extends EventEmitter {
                              '.jpg', '.jpeg', '.png', '.gif', '.svg', '.mp4', '.webm', '.mp3', '.wav'];
       for (const ext of fileExtensions) {
         if (path.endsWith(ext)) {
-          // console.log(`Skipping URL ${url} - non-documentation file extension ${ext}`);
           return null;
         }
       }
@@ -748,7 +729,6 @@ class DocsToMarkdown extends EventEmitter {
       const paginationParams = ['page', 'p', 'pg', 'start', 'offset'];
       const sortingParams = ['sort', 'order', 'sortBy', 'orderBy', 'direction'];
       
-      // it might be duplicate content - check if we should keep it
       let hasPaginationOrSorting = false;
       let hasContentParams = false;
       
@@ -772,7 +752,6 @@ class DocsToMarkdown extends EventEmitter {
         if (hasPaginationOrSorting && !hasContentParams) {
           const page = params.get('page') || params.get('p') || params.get('pg') || '1';
           if (page !== '1') {
-            // console.log(`Skipping URL ${url} - pagination without content params`);
             return null;
           }
         }
@@ -790,8 +769,7 @@ class DocsToMarkdown extends EventEmitter {
           }
         }
         
-        if (!isDocPath) { // Skip deep URLs that don't look like docs
-          // console.log(`Skipping URL ${url} - too deep and not documentation path`);
+        if (!isDocPath) {
           return null;
         }
       }
@@ -836,10 +814,8 @@ class DocsToMarkdown extends EventEmitter {
         }
        } catch (error) {
          if (error instanceof TypeError && error.message.includes('Invalid URL')) {
-           // Log less severe warning for invalid URLs found in source HTML
            log.verbose(`Skipping invalid link found on page: ${href}`);
          } else {
-           // Log other errors as actual errors
            log.verbose(`Error processing link ${href}: ${error.message}`);
          }
        }
@@ -898,5 +874,4 @@ ${markdown}`;
   }
 }
 
-// Export the class using ESM syntax
 export default DocsToMarkdown;

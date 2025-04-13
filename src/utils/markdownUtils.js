@@ -26,7 +26,6 @@ function cleanupMarkdown(markdown) {
   const trimmed = markdown.trim();
   if (trimmed === '') return '';
   
-  // Process the markdown with a series of specific transformations
   let result = trimmed;
   
   // 1. Fix navigation links with excessive whitespace

@@ -1,7 +1,6 @@
 import path from 'path';
 import fs from 'fs-extra';
 import { URL } from 'url';
-// Import the default export from DocumentationScraper.js
 import DocumentationScraper from './DocumentationScraper.js';
 import { MarkdownCompiler } from './MarkdownCompiler.js';
 import { log } from './utils/logger.js';
@@ -19,56 +18,47 @@ function extractNameFromUrl(url) {
 
     if (pathSegments.length > 0) {
       for (let i = pathSegments.length - 1; i >= 0; i--) {
-        const segment = pathSegments[i].replace(/\.[^/.]+$/, ""); // Remove extension
+        const segment = pathSegments[i].replace(/\.[^/.]+$/, "");
         if (!['docs', 'documentation', 'api', 'reference', 'guide', 'introduction', 'index', ''].includes(segment.toLowerCase())) {
-          // Do specific character replacements first, then remove remaining special characters
           return segment
-            .replace(/\$/g, 's')  // Replace $ with s
-            .replace(/[^a-z0-9-]/gi, ''); // Remove remaining special characters
+            .replace(/\$/g, 's')
+            .replace(/[^a-z0-9-]/gi, '');
         }
       }
-      // If all segments are common, use the last one, sanitized
       return (pathSegments[pathSegments.length - 1] || 'index')
-        .replace(/\$/g, 's')  // Replace $ with s
+        .replace(/\$/g, 's')
         .replace(/[^a-z0-9-]/gi, '');
     }
 
-    // Extract meaningful domain name
     const hostParts = urlObj.hostname.split('.');
     
-    // Handle cases like domain-with-hyphens.co.uk
-    // Check if this is a common TLD with a subdomain pattern
     const commonTLDs = ['com', 'org', 'net', 'io', 'dev'];
     const commonCCTLDs = ['co.uk', 'com.au', 'co.nz', 'org.uk'];
     
-    // Get the full hostname without TLD
     let domain = urlObj.hostname;
     
-    // Remove known TLDs
     for (const tld of commonTLDs) {
       if (domain.endsWith(`.${tld}`)) {
-        domain = domain.slice(0, -(tld.length + 1)); // +1 for the dot
+        domain = domain.slice(0, -(tld.length + 1));
         break;
       }
     }
     
-    // Remove known country code TLDs
     for (const cctld of commonCCTLDs) {
       if (domain.endsWith(`.${cctld}`)) {
-        domain = domain.slice(0, -(cctld.length + 1)); // +1 for the dot
+        domain = domain.slice(0, -(cctld.length + 1));
         break;
       }
     }
     
-    // If domain has subdomains, take the last meaningful one
     if (domain.includes('.')) {
       const parts = domain.split('.');
-      domain = parts[parts.length - 1]; // Take the last part
+      domain = parts[parts.length - 1];
     }
     
     return domain
-      .replace(/\$/g, 's')  // Replace $ with s
-      .replace(/[^a-z0-9-]/gi, ''); // Sanitize
+      .replace(/\$/g, 's')
+      .replace(/[^a-z0-9-]/gi, '');
   } catch (error) {
     log.warn('Workflow', `Failed to extract name from URL "${url}": ${error.message}`);
     return `doc-${Date.now()}`;
@@ -99,32 +89,28 @@ function extractNameFromUrl(url) {
  * @async
  */
 async function runSlurpWorkflow(url, options = {}) {
-  let scraper; // Define scraper here to access in catch block if needed
-  let structuredPartialsDir; // Define here for access in finally/cleanup
-  let progressCallback; // Store the progress callback for tests to access
+  let scraper;
+  let structuredPartialsDir;
+  let progressCallback;
 
   try {
-    // Starting log removed as it's now handled by CLI
-
+    
     // --- Validate URL ---
     let urlObj;
     try {
       urlObj = new URL(url);
     } catch (e) {
-      // We need to throw this error directly, not catch it in the outer try-catch
       log.error('Workflow', `Invalid URL provided: ${url}`);
       throw new Error(`Invalid URL provided: ${url}`);
     }
 
     // --- Determine Paths ---
     const siteName = extractNameFromUrl(url);
-    const version = options.version; // Use version if provided in options
+    const version = options.version;
 
-    // Determine base directories
     const basePartialsDir = options.partialsOutputDir || paths.inputDir;
     const compiledOutputDir = options.compiledOutputDir || paths.outputDir;
     
-    // Create absolute paths using process.cwd()
     const absolutePartialsDir = path.isAbsolute(basePartialsDir)
       ? basePartialsDir
       : path.join(process.cwd(), basePartialsDir);
@@ -137,11 +123,9 @@ async function runSlurpWorkflow(url, options = {}) {
     const absoluteCompiledDir = path.isAbsolute(compiledOutputDir)
       ? compiledOutputDir
       : path.join(process.cwd(), compiledOutputDir);
-    // Create the final output path
     const outputFilename = `${siteName}${version ? `_${version}` : ''}_docs.md`;
     const finalCompiledPath = path.join(absoluteCompiledDir, outputFilename);
 
-    // Ensure directories exist
     await fs.ensureDir(structuredPartialsDir);
     await fs.ensureDir(absoluteCompiledDir);
 
@@ -150,14 +134,13 @@ async function runSlurpWorkflow(url, options = {}) {
 
     // --- Configure Scraper ---
     const scrapeConfig = {
-      baseUrl: url, // The actual starting point for scraping
-      basePath: options.basePath || url, // The path prefix for filtering (defaults to start URL)
-      // If basePath is explicitly provided or env var is true, enforce base path filtering
+      baseUrl: url,
+      basePath: options.basePath || url,
       enforceBasePath: options.basePath !== undefined || urlFiltering.enforceBasePath,
       outputDir: structuredPartialsDir,
       maxPages: options.maxPages ?? scraping.maxPagesPerSite,
-      useHeadless: options.useHeadless ?? !scraping.useHeadless, // Note: useHeadless in config is inverted from the one used here
-      libraryInfo: { // Minimal library info for context
+      useHeadless: options.useHeadless ?? !scraping.useHeadless,
+      libraryInfo: {
         library: siteName,
         version: version || '',
         sourceType: 'url'
@@ -171,31 +154,29 @@ async function runSlurpWorkflow(url, options = {}) {
       concurrency: options.concurrency ?? scraping.concurrency,
       retryCount: options.retryCount ?? scraping.retryCount,
       retryDelay: options.retryDelay ?? 1000,
-      // Custom filename generator adapted from cli.js
       getFilenameForUrl: function(pageUrl) {
          try {
            const pageUrlObj = new URL(pageUrl);
            const pagePath = pageUrlObj.pathname;
            if (pagePath === '/' || pagePath === '') return 'index.md';
            const segments = pagePath.replace(/^\/|\/$/g, '').split('/');
-           let currentDir = this.outputDir; // Use scraper's outputDir
+           let currentDir = this.outputDir;
            for (let i = 0; i < segments.length - 1; i++) {
-             currentDir = path.join(currentDir, segments[i].replace(/[^a-z0-9_-]/gi, '_')); // Sanitize dir names
+             currentDir = path.join(currentDir, segments[i].replace(/[^a-z0-9_-]/gi, '_'));
              fs.ensureDirSync(currentDir);
            }
            const lastSegment = segments[segments.length - 1] || 'index';
-           const filename = lastSegment.replace(/\.[^/.]+$/, "").replace(/[^a-z0-9_-]/gi, '_') + '.md'; // Sanitize filename
-           const relativePath = segments.slice(0, -1).map(s => s.replace(/[^a-z0-9_-]/gi, '_')).join(path.sep); // Sanitize relative path parts
+           const filename = lastSegment.replace(/\.[^/.]+$/, "").replace(/[^a-z0-9_-]/gi, '_') + '.md';
+           const relativePath = segments.slice(0, -1).map(s => s.replace(/[^a-z0-9_-]/gi, '_')).join(path.sep);
            return relativePath ? path.join(relativePath, filename) : filename;
          } catch (error) {
            log.warn('Workflow', `Error generating filename for ${pageUrl}: ${error.message}`);
            return `page-${Date.now()}.md`;
          }
        },
-      signal: options.signal // Pass the signal to the scraper config
+       signal: options.signal
     };
 
-    // Log base path configuration for debugging
     log.verbose(`Base path config: baseUrl=${scrapeConfig.baseUrl}, basePath=${scrapeConfig.basePath}, enforceBasePath=${scrapeConfig.enforceBasePath}`);
 
     scraper = new DocumentationScraper(scrapeConfig);
@@ -203,20 +184,15 @@ async function runSlurpWorkflow(url, options = {}) {
     // --- Run Scraper ---
     log.start('Scraping', `Starting... (Concurrency: ${scrapeConfig.concurrency})`);
     
-    // Create a reference to track processed count
     let processedCount = 0;
     
-    // Define the callback function and store the reference (for testing)
     progressCallback = (data) => {
         if (data.type === 'processing') {
             processedCount++;
-            // Call the progress callback if provided
             if (options.onProgress) {
-                // We don't know the total pages easily, so omit 'total' for now
                 options.onProgress(processedCount, undefined, `Scraping page ${processedCount}...`);
             }
-            if (processedCount % 10 === 0 || processedCount === 1) { // Log every 10 pages
-                // Use a safe approach that doesn't require scrapeStats to be defined yet
+            if (processedCount % 10 === 0 || processedCount === 1) {
                 log.progress(`Scraping page ${processedCount}/?...`);
             }
         } else if (data.type === 'failed') {
@@ -224,16 +200,14 @@ async function runSlurpWorkflow(url, options = {}) {
         }
     };
     
-    // The mockerInstance.on method will be replaced in tests to capture this callback
     scraper.on('progress', progressCallback);
     
     // Export the progressCallback for testing
-    // This won't have an effect in production code
     if (process.env.NODE_ENV === 'test') {
         runSlurpWorkflow.testProgressCallback = progressCallback;
     }
 
-    const scrapeStats = await scraper.start(); // This promise resolves when scraping is done
+    const scrapeStats = await scraper.start();
     log.success('Scraping', `Finished. Processed: ${scrapeStats.processed} pages, Failed: ${scrapeStats.failed} pages (${scrapeStats.duration.toFixed(1)}s)`);
 
     if (scrapeStats.processed === 0) {
@@ -244,11 +218,9 @@ async function runSlurpWorkflow(url, options = {}) {
     const compileOptions = {
       inputDir: structuredPartialsDir,
       outputFile: finalCompiledPath,
-      // outputName: siteName, // outputName seems less relevant now we have outputFile
       preserveMetadata: options.preserveMetadata ?? config.compilation.preserveMetadata,
       removeNavigation: options.removeNavigation ?? config.compilation.removeNavigation,
       removeDuplicates: options.removeDuplicates ?? config.compilation.removeDuplicates,
-      // excludePatterns can be passed via options if needed, but omitted for simplicity now
     };
 
     const compiler = new MarkdownCompiler(compileOptions);
@@ -261,11 +233,10 @@ async function runSlurpWorkflow(url, options = {}) {
 
     if (compileResult.stats.processedFiles === 0) {
         log.warn('Compiling', "Compilation finished, but no files were processed.");
-        // Decide if this is an error or just a warning. Let's treat it as success for now, but log clearly.
     }
 
      // --- Cleanup Partials ---
-     const shouldDeletePartials = options.deletePartials ?? true; // Default to true if not specified in options
+     const shouldDeletePartials = options.deletePartials ?? true;
      if (shouldDeletePartials && compileResult.stats.processedFiles > 0) {
        log.start('Cleanup', `Deleting partials directory: ${path.relative(process.cwd(), structuredPartialsDir)}...`);
        await fs.remove(structuredPartialsDir);
@@ -280,22 +251,20 @@ async function runSlurpWorkflow(url, options = {}) {
     // --- Return Success ---
     return {
       success: true,
-      compiledFilePath: path.relative(process.cwd(), finalCompiledPath) // Return relative path
+      compiledFilePath: path.relative(process.cwd(), finalCompiledPath)
     };
 
   } catch (error) {
     log.error('Workflow', `Slurp workflow failed: ${error.message}`);
     if (error.stack) {
-        log.verbose(error.stack); // Log stack in verbose mode
+        log.verbose(error.stack);
     }
     
-    // Special case for URL validation errors - re-throw them directly
     if (error.message.startsWith('Invalid URL provided:')) {
-        throw error; // Re-throw to satisfy test expectations
+        throw error;
     }
     
-    // Attempt cleanup even on error if the directory was created
-    if (structuredPartialsDir && (options.deletePartials ?? true)) { // Default to true if not specified in options
+    if (structuredPartialsDir && (options.deletePartials ?? true)) {
         try {
             log.verbose(`Attempting cleanup of partials directory on error: ${structuredPartialsDir}`);
             await fs.remove(structuredPartialsDir);

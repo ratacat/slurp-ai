@@ -21,9 +21,7 @@ class MarkdownCompiler {
    */
   constructor(options = {}) {
     this.basePath = options.basePath || paths.basePath;
-    // Default input dir from config
     this.inputDir = resolvePath(options.inputDir || paths.inputDir, this.basePath);
-    // Default output file path using config values
     this.outputFile = resolvePath(options.outputFile || path.join(paths.outputDir, 'compiled_docs.md'), this.basePath);
     
     this.preserveMetadata = options.preserveMetadata !== undefined ?
