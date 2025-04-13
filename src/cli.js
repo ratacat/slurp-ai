@@ -3,7 +3,6 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import dotenv from 'dotenv';
 import { runSlurpWorkflow } from './slurpWorkflow.js'; // Adjusted path
 import { MarkdownCompiler } from './MarkdownCompiler.js'; // Adjusted path
 import { log } from './utils/logger.js';
@@ -13,8 +12,6 @@ import config, { paths, scraping, urlFiltering, compilation } from '../config.js
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Configure dotenv (look for .env in parent directory)
-dotenv.config({ path: path.resolve(__dirname, '../.env') }); // Adjusted path
 
 /**
  * SlurpAI - Documentation scraper for AI systems

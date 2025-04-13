@@ -1,4 +1,3 @@
-require('dotenv').config();
 const DocsToMarkdown = require('./src/DocsToMarkdown');
 const path = require('path');
 

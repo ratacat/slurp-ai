@@ -3,7 +3,6 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises'; // Use promises API for async file reading
-import dotenv from 'dotenv';
 // Fix imports to match the actual file paths
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js"; // Revert to McpServer
@@ -18,8 +17,6 @@ import { runSlurpWorkflow } from './src/slurpWorkflow.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Explicitly load .env from the script's directory
-dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 /**
  * Main function to initialize and run the MCP server.
