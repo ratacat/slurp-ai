@@ -5,6 +5,7 @@ import yaml from 'js-yaml';
 import { resolvePath } from './utils/pathUtils.js';
 import { cleanupMarkdown as sharedCleanupMarkdown } from './utils/markdownUtils.js';
 import { paths, compilation } from '../config.js';
+import { log } from './utils/logger.js';
 /**
  * MarkdownCompiler - A class to compile markdown files into a single document
  */
@@ -94,7 +95,7 @@ class MarkdownCompiler {
         stats: this.stats,
       };
     } catch (error) {
-      console.error('Compilation error:', error);
+      log.error('Compile', `Compilation error: ${error}`);
       throw error;
     }
   }
@@ -172,7 +173,8 @@ class MarkdownCompiler {
     try {
       const content = await fs.readFile(filePath, 'utf8');
 
-      const { frontmatter, markdown } = MarkdownCompiler.extractFrontmatter(content);
+      const { frontmatter, markdown } =
+        MarkdownCompiler.extractFrontmatter(content);
 
       const cleanedContent = this.cleanupContent(markdown);
 
@@ -211,7 +213,7 @@ class MarkdownCompiler {
 
       return output;
     } catch (error) {
-      console.error(`Error processing file ${filePath}:`, error);
+      log.error('Compile', `Error processing file ${filePath}: ${error}`);
       return null;
     }
   }
@@ -231,7 +233,7 @@ class MarkdownCompiler {
         const markdown = match[2];
         return { frontmatter, markdown };
       } catch (error) {
-        console.error('Error parsing frontmatter:', error);
+        log.error('Compile', `Error parsing frontmatter: ${error}`);
         return { frontmatter: null, markdown: content };
       }
     }

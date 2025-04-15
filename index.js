@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs-extra';
 import DocsToMarkdown from './src/MarkdownCompiler.js';
+import { log } from './src/utils/logger.js';
 
 // Simple command line argument parsing
 const args = process.argv.slice(2);
@@ -77,8 +78,8 @@ const config = {
 };
 
 // Display configuration
-console.log('Starting documentation scraper with configuration:');
-console.log(JSON.stringify(config, null, 2));
+log.info('Starting documentation scraper with configuration:');
+log.info(JSON.stringify(config, null, 2));
 
 async function main() {
   try {
@@ -86,7 +87,10 @@ async function main() {
     const scraper = new DocsToMarkdown(config);
 
     // Add library metadata to the save process
-    scraper.saveMarkdown = async function (url, markdown) {
+    scraper.saveMarkdown = async function saveMarkdownWithMetadata(
+      url,
+      markdown,
+    ) {
       const options = this.config.libraryInfo || {};
 
       // Use our helper method for consistent filename generation
@@ -123,10 +127,10 @@ ${markdown}`;
 
     await scraper.start();
 
-    console.log('Documentation scraping completed successfully!');
-    console.log(`Markdown files have been saved to: ${outputDir}`);
+    log.success('Scraper', 'Documentation scraping completed successfully!');
+    log.info(`Markdown files have been saved to: ${outputDir}`);
   } catch (error) {
-    console.error('Error during scraping:', error);
+    log.error('Scraper', `Error during scraping: ${error}`);
     process.exit(1);
   }
 }

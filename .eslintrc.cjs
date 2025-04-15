@@ -41,6 +41,7 @@ module.exports = {
     'slurps_partials/',
     '.env',
     'package-lock.json',
+    '__tests__',
     // Add other generated/ignored directories or files
   ],
   overrides: [

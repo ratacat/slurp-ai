@@ -29,6 +29,7 @@ function isUrl(str) {
  * Show help message
  */
 function showHelp() {
+  // eslint-disable-next-line no-console
   console.log(`
 SlurpAI Documentation Scraper
 Usage:
@@ -338,6 +339,6 @@ const isRunViaSlurpBinary =
 
 if (isMainModule || isRunViaSlurpBinary) {
   main().catch((err) => {
-    console.error(err);
+    log.error('CLI', `Unexpected error: ${err}`);
   });
 }
