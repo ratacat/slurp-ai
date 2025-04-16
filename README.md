@@ -20,13 +20,13 @@ SlurpAI is a CLI tool for scraping and compiling documentation from websites and
 
 ```bash
 # Install globally from npm
-npm install -g slurpai
+npm install -g slurp-ai
 ```
 
 Or locally in your project:
 
 ```bash
-npm install slurpai
+npm install slurp-ai
 ```
 
 ## Usage
