@@ -254,7 +254,7 @@ describe('CLI Script (cli.js)', () => {
       try {
         // Execute the globally linked command
         // Capture both stdout and stderr
-        output = execSync('slurp --help', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }); // Pipe stdin, stdout, stderr
+        output = execSync('npx slurp --help', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }); // Pipe stdin, stdout, stderr
       } catch (e) {
         error = e;
         // Log the error if the command fails, useful for debugging CI/setup issues
