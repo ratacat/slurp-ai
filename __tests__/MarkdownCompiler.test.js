@@ -16,6 +16,15 @@ vi.mock('../config.js', () => ({
       inputDir: 'env_partials',
       outputDir: 'slurp_compiled',
     },
+    scraping: {
+      maxPagesPerSite: 100,
+      concurrency: 25,
+      retryCount: 3,
+      retryDelay: 1000,
+      useHeadless: false,
+      debug: false,
+      timeout: 60000,
+    },
     compilation: {
       preserveMetadata: true,
       removeNavigation: true,
@@ -27,6 +36,15 @@ vi.mock('../config.js', () => ({
     basePath: '/test/compiler/base',
     inputDir: 'env_partials',
     outputDir: 'slurp_compiled',
+  },
+  scraping: {
+    maxPagesPerSite: 100,
+    concurrency: 25,
+    retryCount: 3,
+    retryDelay: 1000,
+    useHeadless: false,
+    debug: false,
+    timeout: 60000,
   },
   compilation: {
     preserveMetadata: true,
@@ -193,7 +211,9 @@ invalid: yaml: here
        expect(yamlMock.load).toHaveBeenCalledWith('invalid: yaml: here');
        expect(result.frontmatter).toBeNull();
        expect(result.markdown).toBe(content); // Return original content on error
-       expect(consoleErrorSpy).toHaveBeenCalledWith('Error parsing frontmatter:', error);
+       expect(consoleErrorSpy).toHaveBeenCalledWith(
+         expect.stringContaining('Error parsing frontmatter: Error: YAML Parse Error')
+       );
 
        consoleErrorSpy.mockRestore(); // Restore console.error
     });
