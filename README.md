@@ -41,25 +41,6 @@ slurp https://expressjs.com/en/4.18/
 slurp https://example.com/docs/introduction --base-path https://example.com/docs/
 ```
 
-### NPM Package Documentation
-
-```bash
-# Find and download documentation for a package
-slurp fetch express 4.18.2
-
-# Read local documentation for a package
-slurp read express 4.18.2
-
-# List all locally available documentation
-slurp list
-
-# Check all dependencies in a package.json file
-slurp check ./package.json
-
-# Remove documentation from cache
-slurp purge express 4.18.2
-```
-
 ### How It Works
 
 When you run the URL scraping command, SlurpAI will:
@@ -68,7 +49,7 @@ When you run the URL scraping command, SlurpAI will:
 2. Follow internal links found on the pages. If `SLURP_ENFORCE_BASE_PATH` is set to `true` (the default is `false`), it will only follow links that start with the specified `--base-path` (or the starting URL if `--base-path` is omitted).
 3. Convert the HTML content of scraped pages to Markdown, removing common navigation elements and other non-content sections.
 4. Save intermediate Markdown files to a temporary directory (default: `slurp_partials/`).
-5. Compile these partial files into a single Markdown file in the output directory (default: `slurp_docs/`). The filename will be based on the domain name (e.g., `example_docs.md`).
+5. Compile these partial files into a single Markdown file in the output directory (default: `slurps/`). The filename will be based on the domain name (e.g., `example_docs.md`).
 
 ## Configuration (Optional)
 
@@ -135,7 +116,7 @@ This is often used if the base path itself returns a 404 when you try and load i
 
 ## MCP Server Integration
 
-SlurpAI MCP integration is coming.
+SlurpAI MCP is in testing, it's included in this release. 
 
 ## Contributing
 
