@@ -1,6 +1,6 @@
 {
   "name": "slurp-ai",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A CLI tool for scraping and compiling documentation or other multi page content from websites and NPM packages into a single markdown file.",
   "main": "src/slurpWorkflow.js",
   "bin": {
