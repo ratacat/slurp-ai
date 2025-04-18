@@ -1,6 +1,6 @@
 # SlurpAI
 
-SlurpAI is a CLI tool for scraping and compiling documentation from websites and NPM packages into markdown format. It's designed to be used as a starting point for AI agents to consume documentation via MCP (Model Context Protocol).
+SlurpAI is a CLI tool for scraping and compiling documentation from websites and NPM packages into markdown format. It's designed to be used as a starting point for AI agents to consume documentation via MCP (Model Context Protocol). It is very resource efficient, and fast.
 
 ## Features
 
@@ -11,6 +11,7 @@ SlurpAI is a CLI tool for scraping and compiling documentation from websites and
 - **Compilation**: Combines content from scraped pages into a single output file.
 - **Configurable**: Options can be set via the `config.js` file.
 - **Asynchronous**: Uses async/await for better performance and scalability.
+- **No Use of AI**: For scraping, just nodejs, lightweight and works well.
 
 ## Prerequisites
 
@@ -20,13 +21,7 @@ SlurpAI is a CLI tool for scraping and compiling documentation from websites and
 
 ```bash
 # Install globally from npm
-npm install -g slurpai
-```
-
-Or locally in your project:
-
-```bash
-npm install slurpai
+npm install -g slurp-ai
 ```
 
 ## Usage

@@ -281,10 +281,11 @@ export async function main() {
           log.success(
             `Workflow successful for ${url}. Compiled file: ${result.compiledFilePath}`,
           );
+          // Return the resource URI within the expected content structure
           return {
-            // Return the resource URI in the tool result
-            resource_uri: resourceUri,
-            message: `Successfully scraped and compiled documentation. Resource available at: ${resourceUri}`,
+              content: [
+                  { type: 'text', text: resourceUri }
+              ],
           };
         }
         // Workflow reported failure
@@ -386,9 +387,11 @@ export async function main() {
         // Return the content directly in the tool result
         // Note: MCP Tools might display this as a simple string or within a structure.
         // We'll return an object with a 'content' key for clarity.
+        // Return the content wrapped in a structure likely expected by the client
         return {
-          uri: requestedUri,
-          content: fileContent,
+          content: [
+            { type: 'text', text: fileContent }
+          ],
         };
       } catch (error) {
         if (error.code === 'ENOENT') {
