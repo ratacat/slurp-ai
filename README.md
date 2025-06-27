@@ -1,6 +1,9 @@
 # SlurpAI
 
-SlurpAI is a CLI tool for scraping and compiling documentation from websites and NPM packages into markdown format. It's designed to be used as a starting point for AI agents to consume documentation via MCP (Model Context Protocol). It is very resource efficient, and fast.
+SlurpAI is a CLI tool for scraping and compiling documentation from websites and NPM packages into markdown format. It's designed to be used as a starting point for AI agents to consume documentation via MCP (Model Context Protocol). Including relevant docs in your context helps your coding agents make less mistakes and hallucinations, reducing the amount of time you spend debugging and fighting errors.  SlurpAI is very resource efficient, and fast, it is FOR ai, it does NOT use ai to scrape.
+
+## Alternative to Context7
+Slurp AI is a lightweight alternative to other AI context tools such as Context7. Whereas Context7 will pull large numbers of docs, SlurpAI allows you to manually save the docs you need, and only include them when you want them, using only as much context as you require, and preserving the rest will help your implmentation phase be more effective. AI coding agentics make more mistakes the more full their context is.
 
 ## Features
 
