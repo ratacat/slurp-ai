@@ -1,0 +1,8 @@
+node_modules/
+# slurps/
+
+slurps_partials/
+.env
+.DS_Store
+coverage/
+.nyc_output/
