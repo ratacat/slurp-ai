@@ -328,16 +328,24 @@ async function main() {
 // Export the main function for testing purposes
 export { main };
 
-// Modified entry point check to work with npm link
+// Modified entry point check to work with npm link and Windows
 // We want to run main() if:
 // 1. This is the main module (directly executed), OR
-// 2. This is being run via the 'slurp' binary (process.argv[0] contains 'node' and process.argv[1] ends with 'slurp')
+// 2. This is being run via the 'slurp' binary (process.argv[0] contains 'node' and process.argv[1] ends with 'slurp' or 'slurp.js' or 'cli.js')
 const isMainModule = import.meta.url === `file://${process.argv[1]}`;
 const isRunViaSlurpBinary =
   process.argv[0].includes('node') &&
-  (process.argv[1].endsWith('slurp') || process.argv[1].endsWith('slurpai'));
+  (process.argv[1].endsWith('slurp') ||
+    process.argv[1].endsWith('slurpai') ||
+    process.argv[1].endsWith('cli.js') ||
+    process.argv[1].endsWith('slurp.cmd') ||
+    process.argv[1].endsWith('slurp.ps1') ||
+    process.argv[1].endsWith('slurp.exe'));
 
 if (isMainModule || isRunViaSlurpBinary) {
+  // Suppress deprecation warnings if needed (mimicking the bash wrapper)
+  process.removeAllListeners('warning');
+
   main().catch((err) => {
     log.error('CLI', `Unexpected error: ${err}`);
   });

@@ -4,7 +4,7 @@
   "description": "A CLI tool for scraping and compiling documentation or other multi page content from websites and NPM packages into a single markdown file.",
   "main": "src/slurpWorkflow.js",
   "bin": {
-    "slurp": "bin/slurp"
+    "slurp": "src/cli.js"
   },
   "files": [
     "bin/",

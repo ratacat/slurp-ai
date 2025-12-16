@@ -27,6 +27,9 @@ Slurp AI is a lightweight alternative to other AI context tools such as Context7
 npm install -g slurp-ai
 ```
 
+### Windows Support
+SlurpAI works natively on Windows. Installing via npm will automatically generate the necessary `slurp` command wrappers for PowerShell and Command Prompt.
+
 ## Usage
 
 ### Scraping from a URL
