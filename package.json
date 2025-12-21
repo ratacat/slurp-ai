@@ -35,12 +35,12 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ratacat/slurpai.git"
+    "url": "git+https://github.com/ratacat/slurp-ai.git"
   },
   "bugs": {
-    "url": "https://github.com/ratacat/slurpai/issues"
+    "url": "https://github.com/ratacat/slurp-ai/issues"
   },
-  "homepage": "https://github.com/ratacat/slurpai#readme",
+  "homepage": "https://github.com/ratacat/slurp-ai#readme",
   "engines": {
     "node": ">=20.0.0"
   },

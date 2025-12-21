@@ -2,7 +2,7 @@
 
 <div align="center">
 
-https://github.com/ratacat/slurpai/raw/main/assets/slurp.mp4
+https://github.com/ratacat/slurp-ai/raw/main/assets/slurp.mp4
 
 *Convert entire documentation sites into AI-ready markdown*
 
@@ -120,8 +120,8 @@ SlurpAI MCP is in testing and included in this release.
 
 Issues and pull requests welcome!
 
-- Report issues: [https://github.com/ratacat/slurpai/issues](https://github.com/ratacat/slurpai/issues)
-- Repository: [https://github.com/ratacat/slurpai](https://github.com/ratacat/slurpai)
+- Report issues: [https://github.com/ratacat/slurp-ai/issues](https://github.com/ratacat/slurp-ai/issues)
+- Repository: [https://github.com/ratacat/slurp-ai](https://github.com/ratacat/slurp-ai)
 
 ## License
 
