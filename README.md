@@ -2,7 +2,7 @@
 
 <div align="center">
 
-https://github.com/ratacat/slurp-ai/raw/main/assets/slurp.mp4
+![SlurpAI Demo](assets/slurp.gif)
 
 *Convert entire documentation sites into AI-ready markdown*
 
