@@ -1,60 +1,66 @@
 # SlurpAI
 
-SlurpAI is a CLI tool for scraping and compiling documentation from websites and NPM packages into markdown format. It's designed to be used as a starting point for AI agents to consume documentation via MCP (Model Context Protocol). Including relevant docs in your context helps your coding agents make less mistakes and hallucinations, reducing the amount of time you spend debugging and fighting errors.  SlurpAI is very resource efficient, and fast, it is FOR ai, it does NOT use ai to scrape.
+<div align="center">
 
-## Alternative to Context7
-Slurp AI is a lightweight alternative to other AI context tools such as Context7. Whereas Context7 will pull large numbers of docs, SlurpAI allows you to manually save the docs you need, and only include them when you want them, using only as much context as you require, and preserving the rest will help your implmentation phase be more effective. AI coding agentics make more mistakes the more full their context is.
+https://github.com/ratacat/slurpai/raw/main/assets/slurp.mp4
 
-## Features
+*Convert entire documentation sites into AI-ready markdown*
 
-- **Direct URL Scraping**: Fetches content directly from a starting URL.
-- **NPM Package Documentation**: Retrieves documentation for specific NPM packages and versions.
-- **Markdown Conversion**: Transforms HTML documentation into clean, structured markdown using Turndown.
-- **Content Cleanup**: Removes common navigation elements and other non-content sections.
-- **Compilation**: Combines content from scraped pages into a single output file.
-- **Configurable**: Options can be set via the `config.js` file.
-- **Asynchronous**: Uses async/await for better performance and scalability.
-- **No Use of AI**: For scraping, just nodejs, lightweight and works well.
+</div>
 
-## Prerequisites
+SlurpAI is a CLI tool that scrapes documentation websites and compiles them into clean markdown files. Including relevant docs in your AI context helps coding agents make fewer mistakes and hallucinations.
 
-- Node.js v20 or later
+<table>
+<tr>
+<td width="50%">
+<img src="assets/react.png" alt="React documentation site">
+<p align="center"><em>Before: React docs website</em></p>
+</td>
+<td width="50%">
+<img src="assets/markdown.png" alt="Converted markdown">
+<p align="center"><em>After: Clean markdown file</em></p>
+</td>
+</tr>
+</table>
+
+## Convert a Documentation Site to Markdown
+
+- **Configurable spider** — starts from any URL and follows internal links. See [Configuration](#configuration-optional) for filtering and tuning options.
+- **Content extraction** — strips navigation, sidebars, footers, and other noise, keeping only the documentation content.
+- **Flexible output** — compiles pages into a single markdown file or keeps them separate.
+- **Fast and lightweight** — async scraping with configurable concurrency. No external services required.
+- **No AI used** — pure Node.js scraping. SlurpAI is *for* AI, it doesn't *use* AI.
 
 ## Installation
 
 ```bash
-# Install globally from npm
 npm install -g slurp-ai
 ```
 
-### Windows Support
-SlurpAI works natively on Windows. Installing via npm will automatically generate the necessary `slurp` command wrappers for PowerShell and Command Prompt.
+**Prerequisites:** Node.js v20 or later
+
+**Windows:** Works natively. Installing via npm automatically generates the `slurp` command wrappers.
 
 ## Usage
 
-### Scraping from a URL
-
 ```bash
-# Scrape and compile documentation from a URL in one step
+# Scrape documentation from any URL
 slurp https://expressjs.com/en/4.18/
 
-# With base path option (for filtering links)
+# With base path filtering (only follow links under /docs/)
 slurp https://example.com/docs/introduction --base-path https://example.com/docs/
 ```
 
-### How It Works
+### What Happens
 
-When you run the URL scraping command, SlurpAI will:
-
-1. Start scraping from the provided URL (e.g., `https://example.com/docs/v1/`).
-2. Follow internal links found on the pages. If `SLURP_ENFORCE_BASE_PATH` is set to `true` (the default is `false`), it will only follow links that start with the specified `--base-path` (or the starting URL if `--base-path` is omitted).
-3. Convert the HTML content of scraped pages to Markdown, removing common navigation elements and other non-content sections.
-4. Save intermediate Markdown files to a temporary directory (default: `slurp_partials/`).
-5. Compile these partial files into a single Markdown file in the output directory (default: `slurps/`). The filename will be based on the domain name (e.g., `example_docs.md`).
+1. Starts at the provided URL and discovers internal links
+2. Scrapes each page, converting HTML to clean markdown
+3. Removes navigation, headers, footers, and duplicate content
+4. Compiles everything into a single file in `slurps/` (e.g., `expressjs_docs.md`)
 
 ## Configuration (Optional)
 
-You can customize SlurpAI's behavior by modifying the `config.js` file in the project root. Configuration is organized into logical sections:
+Customize behavior by modifying `config.js` in the project root:
 
 ### File System Paths
 
@@ -62,7 +68,7 @@ You can customize SlurpAI's behavior by modifying the `config.js` file in the pr
 | ----------- | ----------------- | ------------------------------------------------- |
 | `inputDir`  | `slurps_partials` | Directory for intermediate scraped markdown files |
 | `outputDir` | `slurps`          | Directory for the final compiled markdown file    |
-| `basePath`  | <targetUrl>       | Base path used for link filtering (if specified)  |
+| `basePath`  | `<targetUrl>`     | Base path used for link filtering (if specified)  |
 
 ### Web Scraping Settings
 
@@ -72,7 +78,7 @@ You can customize SlurpAI's behavior by modifying the `config.js` file in the pr
 | `concurrency`     | `25`    | Number of pages to process concurrently            |
 | `retryCount`      | `3`     | Number of times to retry failed requests           |
 | `retryDelay`      | `1000`  | Delay between retries in milliseconds              |
-| `useHeadless`     | `false` | Whether to use a headless browser for JS-rendering |
+| `useHeadless`     | `false` | Use headless browser for JS-rendered sites         |
 | `timeout`         | `60000` | Request timeout in milliseconds                    |
 
 ### URL Filtering
@@ -91,40 +97,31 @@ You can customize SlurpAI's behavior by modifying the `config.js` file in the pr
 | `removeDuplicates`    | `true`  | Attempt to remove duplicate content sections          |
 | `similarityThreshold` | `0.9`   | Threshold for considering content sections duplicates |
 
-### Base Path Explanation
+### Base Path Explained
 
-The main URL argument provided to `slurp` is the _starting point_ for scraping. The optional `--base-path` flag defines a URL prefix used for _filtering_ which discovered links are added to the scrape queue.
-
-- If `--base-path` is **not** provided, it defaults to the starting URL, and Slurp will grab all pages that
-  include the starting url in their url string. Sometimes you may want to use different starting pages and base path.
-
-**Example:** To scrape only the `/docs/` section of a site BUT starting from the introduction page:
+The URL argument is the *starting point*. The `--base-path` flag defines a prefix for *filtering* which links to follow.
 
 ```bash
-# Modify config.js to set enforceBasePath to true
-# In config.js:
-# urlFiltering: {
-#   enforceBasePath: true,
-#   ...
-# }
-
-# Then run the command
+# Only scrape /docs/ pages, but start from the introduction
 slurp https://example.com/docs/introduction --base-path https://example.com/docs/
 ```
 
-In this case, links like `https://example.com/docs/advanced` would be followed, but `https://example.com/blog/post` would be ignored.
-This is often used if the base path itself returns a 404 when you try and load it.
+Links like `https://example.com/docs/advanced` are followed; `https://example.com/blog/post` is ignored.
+
+## Alternative to Context7
+
+SlurpAI is a lightweight alternative to tools like Context7. Rather than pulling large doc bundles automatically, SlurpAI lets you manually curate the docs you need and include them only when relevant. Less context means fewer mistakes during implementation.
 
 ## MCP Server Integration
 
-SlurpAI MCP is in testing, it's included in this release.
+SlurpAI MCP is in testing and included in this release.
 
 ## Contributing
 
-Issues and pull requests are welcome! Please feel free to contribute to this project:
+Issues and pull requests welcome!
 
 - Report issues: [https://github.com/ratacat/slurpai/issues](https://github.com/ratacat/slurpai/issues)
-- Project repository: [https://github.com/ratacat/slurpai](https://github.com/ratacat/slurpai)
+- Repository: [https://github.com/ratacat/slurpai](https://github.com/ratacat/slurpai)
 
 ## License
 
