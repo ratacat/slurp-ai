@@ -11,7 +11,6 @@ Generated on 2025-04-15T07:45:11.646Z
 
 # 403 Forbidden
 
-* * *
+---
 
 nginx/1.24.0 (Ubuntu)
-

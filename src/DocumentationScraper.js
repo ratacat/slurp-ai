@@ -10,12 +10,16 @@ import EventEmitter from 'events';
 import { extract } from '@extractus/article-extractor';
 import PQueueModule from 'p-queue';
 import { resolvePath } from './utils/pathUtils.js';
-import { cleanupMarkdown as sharedCleanupMarkdown } from './utils/markdownUtils.js';
+import {
+  cleanupMarkdown as sharedCleanupMarkdown,
+  preprocessHtmlForCodeBlocks,
+} from './utils/markdownUtils.js';
 import { log } from './utils/logger.js';
 import { paths, scraping, urlFiltering } from '../config.js';
 
 /**
  * Patterns that indicate a 404/error page
+ * Note: These are matched case-insensitively against page content
  */
 const ERROR_PAGE_PATTERNS = [
   'page not found',
@@ -23,6 +27,8 @@ const ERROR_PAGE_PATTERNS = [
   'page does not exist',
   '404 error',
   '404 not found',
+  '404 - not found', // Common format with dash
+  '404-not found',
   'not found',
   "couldn't find",
   'could not find',
@@ -42,6 +48,55 @@ const ERROR_PAGE_PATTERNS = [
 ];
 
 /**
+ * Strong patterns that almost always indicate a 404/error page
+ * Even a single match in the title or H1 should trigger detection
+ */
+const STRONG_404_PATTERNS = [
+  /^404\s*[-–—]?\s*not\s*found$/i,  // "404 - Not found" as the only content
+  /^not\s*found$/i,                  // Just "Not found"
+  /^page\s*not\s*found$/i,           // "Page not found"
+  /^error\s*404$/i,                  // "Error 404"
+  /^404\s*error$/i,                  // "404 Error"
+  /^404$/,                           // Just "404"
+];
+
+/**
+ * HTTP status codes that indicate rate limiting
+ */
+const RATE_LIMIT_CODES = [429, 503];
+
+/**
+ * HTTP status codes that are retryable (transient errors)
+ */
+const RETRYABLE_CODES = [408, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524];
+
+/**
+ * Sleep for a specified duration
+ * @param {number} ms - Milliseconds to sleep
+ * @returns {Promise<void>}
+ */
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/**
+ * Calculate exponential backoff delay with jitter
+ * @param {number} attempt - Current attempt number (0-indexed)
+ * @param {number} baseDelay - Base delay in ms
+ * @param {number} maxDelay - Maximum delay in ms (default: 30000)
+ * @returns {number} Delay in ms
+ */
+function getBackoffDelay(attempt, baseDelay, maxDelay = 30000) {
+  // Exponential backoff: baseDelay * 2^attempt
+  const exponentialDelay = baseDelay * 2 ** attempt;
+  // Add jitter (±25%) to prevent thundering herd
+  const jitter = exponentialDelay * 0.25 * (Math.random() * 2 - 1);
+  return Math.min(exponentialDelay + jitter, maxDelay);
+}
+
+/**
  * Check if HTML content appears to be a 404/error page
  * @param {string} html - The HTML content to check
  * @returns {boolean} True if the content looks like a 404 page
@@ -51,6 +106,25 @@ function is404Content(html) {
 
   const lowerHtml = html.toLowerCase();
 
+  // Extract title and h1 content for strong pattern matching
+  // Use a more permissive regex that captures content even with nested tags
+  const titleMatch = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+  const h1Match = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
+
+  // Get text content, stripping any nested HTML tags
+  const titleText = titleMatch
+    ? titleMatch[1].replace(/<[^>]*>/g, '').trim()
+    : '';
+  const h1Text = h1Match ? h1Match[1].replace(/<[^>]*>/g, '').trim() : '';
+
+  // Check strong patterns in title or h1 - these are definitive 404 indicators
+  for (const pattern of STRONG_404_PATTERNS) {
+    if (pattern.test(titleText) || pattern.test(h1Text)) {
+      log.verbose(`Detected 404 via strong pattern in title/h1: "${titleText || h1Text}"`);
+      return true;
+    }
+  }
+
   // Check for common 404 patterns in short pages
   // Long pages are less likely to be error pages
   if (html.length < 10000) {
@@ -59,24 +133,23 @@ function is404Content(html) {
     ).length;
 
     // If multiple patterns match, it's very likely a 404 page
-    if (matchCount >= 2) return true;
+    if (matchCount >= 2) {
+      log.verbose(`Detected 404 via multiple pattern matches (${matchCount})`);
+      return true;
+    }
 
     // For very short pages, even one match is suspicious
     if (html.length < 3000 && matchCount >= 1) {
-      // But check it's in a prominent place (title, h1, main content)
-      const titleMatch = /<title[^>]*>([^<]*)<\/title>/i.exec(html);
-      const h1Match = /<h1[^>]*>([^<]*)<\/h1>/i.exec(html);
+      // Check if pattern is in a prominent place (title, h1)
+      const titleLower = titleText.toLowerCase();
+      const h1Lower = h1Text.toLowerCase();
 
-      if (
-        titleMatch &&
-        ERROR_PAGE_PATTERNS.some((p) => titleMatch[1].toLowerCase().includes(p))
-      ) {
+      if (ERROR_PAGE_PATTERNS.some((p) => titleLower.includes(p))) {
+        log.verbose(`Detected 404 via pattern in title: "${titleText}"`);
         return true;
       }
-      if (
-        h1Match &&
-        ERROR_PAGE_PATTERNS.some((p) => h1Match[1].toLowerCase().includes(p))
-      ) {
+      if (ERROR_PAGE_PATTERNS.some((p) => h1Lower.includes(p))) {
+        log.verbose(`Detected 404 via pattern in h1: "${h1Text}"`);
         return true;
       }
     }
@@ -695,24 +768,100 @@ class DocsToMarkdown extends EventEmitter {
           `${taskId}: Fetching content (headless=${this.useHeadless})...`,
         );
         if (this.useHeadless && browser) {
-          const page = await browser.newPage();
-          let pageError = null;
-          try {
-            await page.setDefaultNavigationTimeout(60000);
-            await page.goto(url, { waitUntil: 'networkidle2' });
-            html = await page.content();
-            log.verbose(`${taskId}: Puppeteer fetch successful.`);
-          } catch (err) {
-            pageError = err;
-            log.verbose(
-              `${taskId}: Puppeteer navigation/content error: ${err.message}`,
-            );
-          } finally {
-            if (page && !page.isClosed()) {
-              await page.close();
+          // Retry loop with exponential backoff for Puppeteer
+          let lastError = null;
+          for (let attempt = 0; attempt <= this.retryCount; attempt++) {
+            const page = await browser.newPage();
+            try {
+              if (attempt > 0) {
+                const delay = getBackoffDelay(attempt - 1, this.retryDelay);
+                log.info(
+                  'Scraping',
+                  `${taskId}: Retry ${attempt}/${this.retryCount} after ${Math.round(delay)}ms delay`,
+                );
+                this.emit('progress', {
+                  type: 'retry',
+                  url,
+                  attempt,
+                  maxRetries: this.retryCount,
+                  delay: Math.round(delay),
+                });
+                await sleep(delay);
+              }
+
+              await page.setDefaultNavigationTimeout(60000);
+              const response = await page.goto(url, { waitUntil: 'networkidle2' });
+
+              // Check response status if available
+              const status = response ? response.status() : 200;
+
+              if (RATE_LIMIT_CODES.includes(status)) {
+                log.warn(
+                  'Scraping',
+                  `${taskId}: Rate limited (${status}) via Puppeteer. Will retry.`,
+                );
+                this.emit('progress', {
+                  type: 'rate_limited',
+                  url,
+                  status,
+                  waitTime: getBackoffDelay(attempt, this.retryDelay),
+                  retryAfter: null,
+                });
+                lastError = new Error(`Rate limited: ${status}`);
+                lastError.status = status;
+                continue; // Will retry after backoff
+              }
+
+              if (RETRYABLE_CODES.includes(status)) {
+                log.warn(
+                  'Scraping',
+                  `${taskId}: Retryable error (${status}) via Puppeteer. Will retry.`,
+                );
+                lastError = new Error(`HTTP ${status}`);
+                lastError.status = status;
+                continue; // Will retry after backoff
+              }
+
+              // Handle 404 specifically - skip without treating as error
+              if (status === 404) {
+                log.verbose(`${taskId}: HTTP 404 via Puppeteer, skipping page.`);
+                this.stats.failed += 1;
+                return; // Exit the queue task entirely
+              }
+
+              html = await page.content();
+              log.verbose(`${taskId}: Puppeteer fetch successful (status: ${status}).`);
+              break; // Exit retry loop on success
+            } catch (err) {
+              lastError = err;
+              const isTimeout = err.message.includes('timeout') || err.message.includes('Timeout');
+              const isNetworkError = err.message.includes('net::') || err.message.includes('Navigation failed');
+
+              log.warn(
+                'Scraping',
+                `${taskId}: Puppeteer ${isTimeout ? 'timeout' : 'error'}: ${err.message}. Will retry.`,
+              );
+
+              if (!isTimeout && !isNetworkError) {
+                // Unknown error, don't retry
+                throw err;
+              }
+              // Will retry after backoff
+            } finally {
+              if (page && !page.isClosed()) {
+                await page.close();
+              }
             }
           }
-          if (pageError) throw pageError;
+
+          // If we exhausted retries, throw the last error
+          if (!html) {
+            log.error(
+              'Scraping',
+              `${taskId}: All ${this.retryCount} Puppeteer retries exhausted.`,
+            );
+            throw lastError || new Error('Max retries exceeded');
+          }
 
           // Check for 404-like content from puppeteer
           if (is404Content(html)) {
@@ -724,19 +873,125 @@ class DocsToMarkdown extends EventEmitter {
           }
         } else {
           log.verbose(`${taskId}: Using axios.`);
-          const response = await axios.get(url, {
-            timeout: 60000,
-            headers: {
-              'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            },
-            // Reject 4xx and 5xx status codes
-            validateStatus: (status) => status >= 200 && status < 400,
-          });
-          html = response.data;
-          log.verbose(
-            `${taskId}: Axios fetch successful (status: ${response.status}).`,
-          );
+
+          // Retry loop with exponential backoff
+          let lastError = null;
+          for (let attempt = 0; attempt <= this.retryCount; attempt++) {
+            try {
+              if (attempt > 0) {
+                const delay = getBackoffDelay(attempt - 1, this.retryDelay);
+                log.info(
+                  'Scraping',
+                  `${taskId}: Retry ${attempt}/${this.retryCount} after ${Math.round(delay)}ms delay`,
+                );
+                this.emit('progress', {
+                  type: 'retry',
+                  url,
+                  attempt,
+                  maxRetries: this.retryCount,
+                  delay: Math.round(delay),
+                });
+                await sleep(delay);
+              }
+
+              const response = await axios.get(url, {
+                timeout: 60000,
+                headers: {
+                  'User-Agent':
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                },
+                // Accept all status codes to handle retries ourselves
+                validateStatus: () => true,
+              });
+
+              const { status } = response;
+
+              // Check for rate limiting
+              if (RATE_LIMIT_CODES.includes(status)) {
+                const retryAfter = response.headers['retry-after'];
+                const waitTime = retryAfter
+                  ? parseInt(retryAfter, 10) * 1000
+                  : getBackoffDelay(attempt, this.retryDelay);
+                log.warn(
+                  'Scraping',
+                  `${taskId}: Rate limited (${status}). Waiting ${Math.round(waitTime / 1000)}s before retry.`,
+                );
+                this.emit('progress', {
+                  type: 'rate_limited',
+                  url,
+                  status,
+                  waitTime,
+                  retryAfter: retryAfter || null,
+                });
+                lastError = new Error(`Rate limited: ${status}`);
+                lastError.status = status;
+                continue; // Will retry after backoff
+              }
+
+              // Check for other retryable errors
+              if (RETRYABLE_CODES.includes(status)) {
+                log.warn(
+                  'Scraping',
+                  `${taskId}: Retryable error (${status}). Will retry.`,
+                );
+                lastError = new Error(`HTTP ${status}`);
+                lastError.status = status;
+                continue; // Will retry after backoff
+              }
+
+              // Handle 404 specifically - skip without treating as error
+              if (status === 404) {
+                log.verbose(`${taskId}: HTTP 404, skipping page.`);
+                this.stats.failed += 1;
+                return; // Exit the queue task entirely
+              }
+
+              // Non-retryable client errors (4xx except 429, 408, 404)
+              if (status >= 400 && status < 500) {
+                log.verbose(
+                  `${taskId}: Client error (${status}), not retrying.`,
+                );
+                throw new Error(`HTTP ${status}: ${response.statusText}`);
+              }
+
+              // Success!
+              html = response.data;
+              log.verbose(
+                `${taskId}: Axios fetch successful (status: ${status}).`,
+              );
+              break; // Exit retry loop on success
+            } catch (axiosError) {
+              // Network errors, timeouts, etc.
+              lastError = axiosError;
+              const isTimeout =
+                axiosError.code === 'ECONNABORTED' ||
+                axiosError.code === 'ETIMEDOUT';
+              const isNetworkError =
+                axiosError.code === 'ECONNREFUSED' ||
+                axiosError.code === 'ENOTFOUND' ||
+                axiosError.code === 'ECONNRESET';
+
+              if (isTimeout || isNetworkError) {
+                log.warn(
+                  'Scraping',
+                  `${taskId}: ${isTimeout ? 'Timeout' : 'Network error'} (${axiosError.code}). Will retry.`,
+                );
+                continue; // Will retry after backoff
+              }
+
+              // Unknown error, don't retry
+              throw axiosError;
+            }
+          }
+
+          // If we exhausted retries, throw the last error
+          if (!html) {
+            log.error(
+              'Scraping',
+              `${taskId}: All ${this.retryCount} retries exhausted.`,
+            );
+            throw lastError || new Error('Max retries exceeded');
+          }
         }
 
         // Check for 404-like content (soft 404s that return 200)
@@ -822,7 +1077,9 @@ class DocsToMarkdown extends EventEmitter {
       if (article && article.content) {
         let markdown;
         try {
-          markdown = this.turndownService.turndown(article.content);
+          // Preprocess HTML to handle MkDocs/Material code blocks before Turndown
+          const preprocessedHtml = preprocessHtmlForCodeBlocks(article.content);
+          markdown = this.turndownService.turndown(preprocessedHtml);
         } catch (turndownError) {
           // GFM plugin can fail on malformed tables - fall back to basic conversion
           log.verbose(`Turndown conversion failed for ${url}: ${turndownError.message}`);
@@ -830,7 +1087,8 @@ class DocsToMarkdown extends EventEmitter {
             headingStyle: 'atx',
             codeBlockStyle: 'fenced',
           });
-          markdown = basicTurndown.turndown(article.content);
+          const preprocessedHtml = preprocessHtmlForCodeBlocks(article.content);
+          markdown = basicTurndown.turndown(preprocessedHtml);
         }
 
         markdown = this.cleanupMarkdown(markdown);
@@ -853,7 +1111,9 @@ class DocsToMarkdown extends EventEmitter {
 
     let markdown;
     try {
-      markdown = this.turndownService.turndown(content.html() || '');
+      // Preprocess HTML to handle MkDocs/Material code blocks before Turndown
+      const preprocessedHtml = preprocessHtmlForCodeBlocks(content.html() || '');
+      markdown = this.turndownService.turndown(preprocessedHtml);
     } catch (turndownError) {
       // GFM plugin can fail on malformed tables - fall back to basic conversion
       log.verbose(`Turndown conversion failed for ${url}: ${turndownError.message}`);
@@ -862,7 +1122,8 @@ class DocsToMarkdown extends EventEmitter {
         headingStyle: 'atx',
         codeBlockStyle: 'fenced',
       });
-      markdown = basicTurndown.turndown(content.html() || '');
+      const preprocessedHtml = preprocessHtmlForCodeBlocks(content.html() || '');
+      markdown = basicTurndown.turndown(preprocessedHtml);
     }
 
     markdown = this.cleanupMarkdown(markdown);

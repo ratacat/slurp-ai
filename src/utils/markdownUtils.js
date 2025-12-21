@@ -1,3 +1,130 @@
+import * as cheerioModule from 'cheerio';
+
+const cheerio = cheerioModule.default || cheerioModule;
+
+/**
+ * Detect language from code element class names.
+ * Handles various class naming patterns from different highlighters.
+ * @param {string} className - The class attribute value
+ * @returns {string} The detected language or empty string
+ */
+function detectLanguageFromClass(className) {
+  if (!className) return '';
+
+  // Common patterns: "language-python", "lang-js", "highlight-python", "python", "hljs language-python"
+  const patterns = [
+    /language-(\w+)/i,
+    /lang-(\w+)/i,
+    /highlight-(\w+)/i,
+    /hljs\s+(\w+)/i,
+    /^(\w+)$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = className.match(pattern);
+    if (match) {
+      const lang = match[1].toLowerCase();
+      // Filter out common non-language classes
+      if (!['hljs', 'highlight', 'code', 'pre', 'block', 'inline'].includes(lang)) {
+        return lang;
+      }
+    }
+  }
+
+  return '';
+}
+
+/**
+ * Preprocess HTML to handle MkDocs/Material theme code blocks.
+ * MkDocs wraps code in tables for line numbers:
+ * <table><tbody><tr><td>line numbers</td><td><pre><code>code</code></pre></td></tr></tbody></table>
+ *
+ * This function converts them to standard <pre><code> blocks that Turndown handles correctly.
+ * Also strips syntax highlighting spans and empty anchors from code.
+ *
+ * @param {string} html - The HTML content to preprocess
+ * @returns {string} Preprocessed HTML with cleaned code blocks
+ */
+function preprocessHtmlForCodeBlocks(html) {
+  if (!html || typeof html !== 'string') return html;
+
+  const $ = cheerio.load(html, { decodeEntities: false });
+
+  // Handle MkDocs/Material table-wrapped code blocks
+  // Pattern: <table><tbody><tr><td></td><td><div><pre><code>...</code></pre></div></td></tr></tbody></table>
+  $('table').each((i, table) => {
+    const $table = $(table);
+
+    // Check if this table contains a code block (look for pre > code inside a td)
+    const $codeCell = $table.find('td pre code, td div pre code');
+
+    if ($codeCell.length > 0) {
+      // This is a code block table - extract the code
+      const $pre = $codeCell.closest('pre');
+      const $code = $codeCell.first();
+
+      // Get language from class
+      let language = detectLanguageFromClass($code.attr('class') || '');
+      if (!language) {
+        language = detectLanguageFromClass($pre.attr('class') || '');
+      }
+
+      // Get the text content, stripping all inner HTML tags
+      const codeText = $code.text();
+
+      // Create a clean pre > code block
+      const cleanPre = `<pre><code class="language-${language}">${escapeHtml(codeText)}</code></pre>`;
+
+      // Replace the entire table with the clean code block
+      $table.replaceWith(cleanPre);
+    }
+  });
+
+  // Strip empty anchor tags that are used for line numbers: <a></a> or <a id="..."></a>
+  $('pre a, code a').each((i, anchor) => {
+    const $anchor = $(anchor);
+    // If anchor has no meaningful text content, remove it entirely
+    if (!$anchor.text().trim()) {
+      $anchor.remove();
+    }
+  });
+
+  // Strip syntax highlighting spans inside code blocks, keeping only text
+  $('pre span, code span').each((i, span) => {
+    const $span = $(span);
+    // Replace span with its text content
+    $span.replaceWith($span.text());
+  });
+
+  // Also handle standalone pre blocks that might have spans/anchors
+  $('pre').each((i, pre) => {
+    const $pre = $(pre);
+    // If this pre has a code child, the code child was already processed
+    if ($pre.find('code').length === 0) {
+      // Direct pre without code - get text content
+      const text = $pre.text();
+      const lang = detectLanguageFromClass($pre.attr('class') || '');
+      $pre.html(`<code class="language-${lang}">${escapeHtml(text)}</code>`);
+    }
+  });
+
+  return $.html();
+}
+
+/**
+ * Escape HTML special characters for safe embedding in HTML.
+ * @param {string} text - Text to escape
+ * @returns {string} Escaped text
+ */
+function escapeHtml(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 /**
  * Apply general cleanup rules to markdown content.
  * Follows specific formatting rules:
@@ -82,7 +209,48 @@ function cleanupMarkdown(markdown) {
   // 7. Remove empty list items
   result = result.replace(/\*\s*\n\s*\*/g, '*');
 
+  // 8. Strip any remaining HTML tags that leaked through (common in MkDocs/Material)
+  // Remove table structure tags
+  result = result.replace(/<\/?table[^>]*>/gi, '');
+  result = result.replace(/<\/?tbody[^>]*>/gi, '');
+  result = result.replace(/<\/?thead[^>]*>/gi, '');
+  result = result.replace(/<\/?tr[^>]*>/gi, '');
+  result = result.replace(/<\/?td[^>]*>/gi, '');
+  result = result.replace(/<\/?th[^>]*>/gi, '');
+
+  // Remove empty anchor tags: <a></a> or <a id="..."></a>
+  result = result.replace(/<a[^>]*><\/a>/gi, '');
+
+  // Remove span tags (syntax highlighting remnants)
+  result = result.replace(/<\/?span[^>]*>/gi, '');
+
+  // Remove div tags
+  result = result.replace(/<\/?div[^>]*>/gi, '');
+
+  // Remove pre/code tags that leaked
+  result = result.replace(/<\/?pre[^>]*>/gi, '');
+  result = result.replace(/<\/?code[^>]*>/gi, '');
+
+  // 9. Remove empty markdown links: [](url)
+  result = result.replace(/\[\]\([^)]+\)/g, '');
+
+  // 10. Remove codelineno references that leaked into content
+  // Pattern: [](_file.md#__codelineno-N-M)
+  result = result.replace(/\[\]\([^)]*#__codelineno-[^)]+\)/g, '');
+
+  // Also clean inline codelineno patterns
+  result = result.replace(/\[?\]?\([^)]*#__codelineno-[^)]*\)/g, '');
+
+  // 11. Clean up any double-escaped HTML entities that might result
+  result = result.replace(/&amp;lt;/g, '&lt;');
+  result = result.replace(/&amp;gt;/g, '&gt;');
+  result = result.replace(/&amp;amp;/g, '&amp;');
+
+  // 12. Final cleanup - normalize excessive whitespace from removed tags
+  result = result.replace(/\n{3,}/g, '\n\n');
+  result = result.replace(/[ \t]+\n/g, '\n');
+
   return result;
 }
 
-export { cleanupMarkdown };
+export { cleanupMarkdown, preprocessHtmlForCodeBlocks };
