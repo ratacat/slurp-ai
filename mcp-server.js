@@ -32,9 +32,20 @@ export class ScrapeDocumentationTool {
   schema = {
     url: z.string().url().describe('The URL to scrape documentation from'),
     version: z.string().optional().describe('Version of the documentation'),
-    maxPages: z.number().positive().optional().describe('Maximum number of pages to scrape'),
-    basePath: z.string().url().optional().describe('Base path for relative links'),
-    force_refresh: z.boolean().optional().describe('Force refresh instead of using cache')
+    maxPages: z
+      .number()
+      .positive()
+      .optional()
+      .describe('Maximum number of pages to scrape'),
+    basePath: z
+      .string()
+      .url()
+      .optional()
+      .describe('Base path for relative links'),
+    force_refresh: z
+      .boolean()
+      .optional()
+      .describe('Force refresh instead of using cache'),
   };
 
   /**
@@ -53,7 +64,7 @@ export class ScrapeDocumentationTool {
     if (!args || typeof args !== 'object') {
       throw new McpError(
         ErrorCode.InvalidParams,
-        'Missing required parameters'
+        'Missing required parameters',
       );
     }
 
@@ -63,14 +74,14 @@ export class ScrapeDocumentationTool {
     if (!url) {
       throw new McpError(
         ErrorCode.InvalidParams,
-        'Missing required parameter: url'
+        'Missing required parameter: url',
       );
     }
 
     if (typeof url !== 'string') {
       throw new McpError(
         ErrorCode.InvalidParams,
-        `Invalid URL parameter type received: ${typeof url}`
+        `Invalid URL parameter type received: ${typeof url}`,
       );
     }
 
@@ -80,7 +91,7 @@ export class ScrapeDocumentationTool {
     } catch {
       throw new McpError(
         ErrorCode.InvalidParams,
-        `Invalid URL provided: ${url}`
+        `Invalid URL provided: ${url}`,
       );
     }
 
@@ -89,7 +100,7 @@ export class ScrapeDocumentationTool {
       url,
       version,
       maxPages,
-      basePath
+      basePath,
     });
 
     // Check cache if not forcing refresh
@@ -97,35 +108,35 @@ export class ScrapeDocumentationTool {
       log.info(`Using cached result for URL: ${url}`);
       return {
         resource_uri: mockCacheStore.get(cacheKey),
-        message: `Retrieved cached documentation scrape result for: ${url}`
+        message: `Retrieved cached documentation scrape result for: ${url}`,
       };
     }
 
     // Generate a unique job ID
     const jobId = crypto.randomUUID();
-    
+
     // Store job status
     mockJobStatusStore.set(jobId, {
       status: 'pending',
       url,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
     });
 
     // Generate resource URI
     const resourceUri = `slurp://scrape-jobs/${jobId}`;
-    
+
     // Store in cache
     mockCacheStore.set(cacheKey, resourceUri);
-    
+
     try {
       // Call the imported runSlurpWorkflow function
       // This is what the tests are mocking
       await runSlurpWorkflow(url, {
         maxPages,
         version,
-        basePath
+        basePath,
       });
-      
+
       // Update job status
       mockJobStatusStore.set(jobId, {
         ...mockJobStatusStore.get(jobId),
@@ -133,8 +144,8 @@ export class ScrapeDocumentationTool {
         completedAt: new Date().toISOString(),
         result: {
           success: true,
-          compiledFilePath: 'slurps/example/compiled_docs.md'
-        }
+          compiledFilePath: 'slurps/example/compiled_docs.md',
+        },
       });
     } catch (error) {
       // Update job status to failed
@@ -142,21 +153,18 @@ export class ScrapeDocumentationTool {
         ...mockJobStatusStore.get(jobId),
         status: 'failed',
         error: error.message,
-        completedAt: new Date().toISOString()
+        completedAt: new Date().toISOString(),
       });
-      
+
       // If this is a specific error we're checking for in tests, rethrow it
       if (error.message === 'Invalid URL provided: invalid-url') {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          error.message
-        );
+        throw new McpError(ErrorCode.InvalidParams, error.message);
       }
     }
-    
+
     return {
       resource_uri: resourceUri,
-      message: `Started documentation scrape job for: ${url}`
+      message: `Started documentation scrape job for: ${url}`,
     };
   }
 }
@@ -204,12 +212,9 @@ export async function main() {
           throw error;
         }
         // Otherwise, wrap it in an MCP error
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          error.message
-        );
+        throw new McpError(ErrorCode.InvalidParams, error.message);
       }
-    }
+    },
   );
 
   // Register the compile_documentation tool
@@ -220,17 +225,14 @@ export async function main() {
     async (args) => {
       // Empty stub implementation
       return {};
-    }
+    },
   );
 
   // Register the resource provider for scrape jobs
-  server.resource(
-    'slurp://scrape-jobs/{+jobId}',
-    async (request) => {
-      // Empty stub implementation
-      return {};
-    }
-  );
+  server.resource('slurp://scrape-jobs/{+jobId}', async (request) => {
+    // Empty stub implementation
+    return {};
+  });
 
   // --- Tool and Resource Handlers ---
 
@@ -268,7 +270,7 @@ export async function main() {
         // Call the refactored workflow function
         log.verbose('Starting runSlurpWorkflow...');
         log.verbose(`Calling runSlurpWorkflow with URL: ${url}`); // Use extracted url variable
-        
+
         // Use the imported runSlurpWorkflow function
         const result = await runSlurpWorkflow(url, { signal: null });
 
@@ -283,9 +285,7 @@ export async function main() {
           );
           // Return the resource URI within the expected content structure
           return {
-              content: [
-                  { type: 'text', text: resourceUri }
-              ],
+            content: [{ type: 'text', text: resourceUri }],
           };
         }
         // Workflow reported failure
@@ -389,9 +389,7 @@ export async function main() {
         // We'll return an object with a 'content' key for clarity.
         // Return the content wrapped in a structure likely expected by the client
         return {
-          content: [
-            { type: 'text', text: fileContent }
-          ],
+          content: [{ type: 'text', text: fileContent }],
         };
       } catch (error) {
         if (error.code === 'ENOENT') {
@@ -556,7 +554,7 @@ export async function main() {
 // Run the server when this file is executed directly (not imported as a module)
 // Using a simpler check to avoid TypeScript/linting issues
 if (import.meta.url === `file://${process.argv[1] || ''}`) {
-  main().catch(error => {
+  main().catch((error) => {
     log.error(`Unhandled error during server execution: ${error.message}`);
     if (error.stack) {
       log.verbose(error.stack);

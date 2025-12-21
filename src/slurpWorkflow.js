@@ -4,74 +4,144 @@ import { URL } from 'url';
 import DocumentationScraper from './DocumentationScraper.js';
 import { MarkdownCompiler } from './MarkdownCompiler.js';
 import { log } from './utils/logger.js';
+import { fetchSitemap, ProgressEstimator } from './utils/sitemap.js';
 import { paths, scraping, urlFiltering, compilation } from '../config.js';
 
 /**
- * Extracts a base name from a URL, suitable for filenames/directory names.
+ * Attempts to detect a version string from a URL.
+ * Looks for common version patterns in paths and query strings.
+ *
+ * Examples:
+ *   https://docs.python.org/3.11/library → "3.11"
+ *   https://react.dev/v18/api → "v18"
+ *   https://example.com/docs?version=2.0.0 → "2.0.0"
+ *   https://lodash.com/docs/4.17.15 → "4.17.15"
+ *
+ * @param {string} url - The URL to extract version from.
+ * @returns {string|null} Detected version string or null.
+ */
+function detectVersionFromUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
+    const searchParams = urlObj.searchParams;
+
+    // Check query params first
+    const versionParam =
+      searchParams.get('version') ||
+      searchParams.get('v') ||
+      searchParams.get('ver');
+    if (versionParam) {
+      return versionParam;
+    }
+
+    // Common URL path patterns for versions
+    const versionPatterns = [
+      // /v1/, /v2/, /v18/
+      /\/v(\d+(?:\.\d+)*)\/?/i,
+      // /3.11/, /4.17.15/
+      /\/(\d+\.\d+(?:\.\d+)?)\/?/,
+      // /@1.2.3/, /@latest/
+      /@(\d+\.\d+(?:\.\d+)?|latest|next|stable)\/?/i,
+      // /version-1.2.3/
+      /\/version[_-]?(\d+(?:\.\d+)*)\/?/i,
+      // /docs-v2/
+      /\/docs[_-]v(\d+(?:\.\d+)*)\/?/i,
+    ];
+
+    for (const pattern of versionPatterns) {
+      const match = pathname.match(pattern);
+      if (match) {
+        // Return with 'v' prefix if it's just a major version number
+        const ver = match[1];
+        if (/^\d+$/.test(ver)) {
+          return `v${ver}`;
+        }
+        return ver;
+      }
+    }
+
+    return null;
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
+ * Extracts a base name from a URL, suitable for filenames.
+ * Uses domain name, adding "-docs" suffix if subdomain is "docs" or path starts with /docs.
+ *
+ * Examples:
+ *   https://react.dev/reference → "react"
+ *   https://docs.anthropic.com/en/docs → "anthropic-docs"
+ *   https://docs.python.org/3/library → "python-docs"
+ *   https://platform.claude.com/docs → "claude-platform-docs"
+ *   https://code.claude.com/docs → "claude-code-docs"
+ *   https://flask.palletsprojects.com/quickstart → "palletsprojects-flask"
+ *
  * @param {string} url - The URL to extract the name from.
  * @returns {string} A sanitized name derived from the URL.
  */
 function extractNameFromUrl(url) {
   try {
     const urlObj = new URL(url);
-    const pathSegments = urlObj.pathname.split('/').filter(Boolean);
-
-    if (pathSegments.length > 0) {
-      for (let i = pathSegments.length - 1; i >= 0; i -= 1) {
-        const segment = pathSegments[i].replace(/\.[^/.]+$/, '');
-        if (
-          ![
-            'docs',
-            'documentation',
-            'api',
-            'reference',
-            'guide',
-            'introduction',
-            'index',
-            '',
-          ].includes(segment.toLowerCase())
-        ) {
-          return segment.replace(/\$/g, 's').replace(/[^a-z0-9-]/gi, '');
-        }
-      }
-      return (pathSegments[pathSegments.length - 1] || 'index')
-        .replace(/\$/g, 's')
-        .replace(/[^a-z0-9-]/gi, '');
+    const hostname = urlObj.hostname.toLowerCase();
+    
+    // Check if subdomain is "docs"
+    const hasDocsSubdomain = hostname.startsWith('docs.');
+    
+    // Common TLDs to strip
+    const tlds = [
+      // Country-code second-level domains (must check first - longer matches)
+      '.co.uk', '.com.au', '.co.nz', '.org.uk', '.co.jp',
+      // Common TLDs
+      '.com', '.org', '.net', '.io', '.dev', '.ai', '.app', '.sh',
+    ];
+    
+    let domain = hostname;
+    
+    // Strip "docs." subdomain if present
+    if (hasDocsSubdomain) {
+      domain = domain.slice(5); // Remove "docs."
     }
-
-    const commonTLDs = ['com', 'org', 'net', 'io', 'dev'];
-    const commonCCTLDs = ['co.uk', 'com.au', 'co.nz', 'org.uk'];
-
-    let domain = urlObj.hostname;
-
-    commonTLDs.some((tld) => {
-      if (domain.endsWith(`.${tld}`)) {
-        domain = domain.slice(0, -(tld.length + 1));
-        return true;
+    
+    // Strip TLD
+    for (const tld of tlds) {
+      if (domain.endsWith(tld)) {
+        domain = domain.slice(0, -tld.length);
+        break;
       }
-      return false;
-    });
-
-    commonCCTLDs.some((cctld) => {
-      if (domain.endsWith(`.${cctld}`)) {
-        domain = domain.slice(0, -(cctld.length + 1));
-        return true;
-      }
-      return false;
-    });
-
+    }
+    
+    // Handle multiple subdomain parts (e.g., "platform.claude" → "claude-platform")
     if (domain.includes('.')) {
       const parts = domain.split('.');
-      domain = parts[parts.length - 1];
+      // Reverse order: subdomain.brand → brand-subdomain
+      // e.g., platform.claude → claude-platform
+      domain = parts.reverse().join('-');
     }
 
-    return domain.replace(/\$/g, 's').replace(/[^a-z0-9-]/gi, '');
+    // Sanitize: keep only alphanumeric and hyphens
+    domain = domain.replace(/[^a-z0-9-]/gi, '').toLowerCase();
+
+    // Add "-docs" suffix if the original had a docs subdomain
+    if (hasDocsSubdomain) {
+      domain = `${domain}-docs`;
+    }
+
+    // Also add "-docs" suffix if the URL path starts with /docs (and we don't already have it)
+    const pathname = urlObj.pathname.toLowerCase();
+    if (pathname.startsWith('/docs') && !domain.endsWith('-docs')) {
+      domain = `${domain}-docs`;
+    }
+    
+    return domain || `site-${Date.now()}`;
   } catch (error) {
     log.warn(
       'Workflow',
       `Failed to extract name from URL "${url}": ${error.message}`,
     );
-    return `doc-${Date.now()}`;
+    return `site-${Date.now()}`;
   }
 }
 
@@ -112,6 +182,9 @@ async function runSlurpWorkflow(url, options = {}) {
       throw new Error(`Invalid URL provided: ${url}`);
     }
 
+    // --- Print header ---
+    log.header(url);
+
     // --- Determine Paths ---
     const siteName = extractNameFromUrl(url);
     const { version } = options;
@@ -131,7 +204,7 @@ async function runSlurpWorkflow(url, options = {}) {
     const absoluteCompiledDir = path.isAbsolute(compiledOutputDir)
       ? compiledOutputDir
       : path.join(process.cwd(), compiledOutputDir);
-    const outputFilename = `${siteName}${version ? `_${version}` : ''}_docs.md`;
+    const outputFilename = `${siteName}${version ? `_${version}` : ''}.md`;
     const finalCompiledPath = path.join(absoluteCompiledDir, outputFilename);
 
     await fs.ensureDir(structuredPartialsDir);
@@ -212,29 +285,92 @@ async function runSlurpWorkflow(url, options = {}) {
 
     scraper = new DocumentationScraper(scrapeConfig);
 
+    // --- Check for Sitemap ---
+    log.spinnerStart('Scraping', 'checking sitemap...');
+    log.spinnerLog('Looking for sitemap.xml...');
+
+    const estimator = new ProgressEstimator();
+    estimator.start();
+
+    // Try to get page count from sitemap
+    const basePath = scrapeConfig.basePath || url;
+    const sitemapResult = await fetchSitemap(url, new URL(basePath).pathname);
+
+    if (sitemapResult.found && sitemapResult.count > 0) {
+      const sitemapCount = sitemapResult.count;
+      const maxPages = scrapeConfig.maxPages || sitemapCount;
+      const effectiveCount = Math.min(sitemapCount, maxPages);
+
+      estimator.setSitemapEstimate(effectiveCount);
+
+      if (sitemapCount > maxPages) {
+        log.spinnerLog(`Sitemap: ${sitemapCount} pages (limiting to ${maxPages})`);
+      } else {
+        log.spinnerLog(`Sitemap: ${sitemapCount} pages`);
+      }
+      log.spinnerSetProgress(0, effectiveCount);
+    } else {
+      log.spinnerLog('No sitemap, estimating as we go...');
+    }
+
     // --- Run Scraper ---
-    log.start(
-      'Scraping',
-      `Starting... (Concurrency: ${scrapeConfig.concurrency})`,
-    );
+    log.spinnerLog('Initializing browser...');
 
     let processedCount = 0;
+    let inFlightCount = 0;
+    let pageStartTimes = new Map();
 
     progressCallback = (data) => {
       if (data.type === 'processing') {
+        inFlightCount = data.inProgress || 0;
+        pageStartTimes.set(data.url, Date.now());
+
+        // Track discovered URLs for estimation
+        estimator.addDiscoveredUrl(data.url);
+      } else if (data.type === 'saved') {
+        // Calculate how long this page took
+        const startTime = pageStartTimes.get(data.url) || Date.now();
+        const duration = Date.now() - startTime;
+        pageStartTimes.delete(data.url);
+
+        // Update estimator
+        estimator.recordCompletion(duration);
         processedCount += 1;
+
+        // Update progress bar with actual progress
+        const progress = estimator.getProgress();
+        const estimatedTotal = estimator.estimatedTotal;
+        log.spinnerSetProgress(progress, estimatedTotal);
+
         if (options.onProgress) {
           options.onProgress(
             processedCount,
-            undefined,
+            estimatedTotal,
             `Scraping page ${processedCount}...`,
           );
         }
-        if (processedCount % 10 === 0 || processedCount === 1) {
-          log.progress(`Scraping page ${processedCount}/?...`);
-        }
+
+        // Update spinner with current progress
+        log.spinnerUpdate('Scraping', `${processedCount} pages`, {
+          inFlight: inFlightCount,
+        });
+
+        // Log the page title (extracted from URL path)
+        const urlPath = new URL(data.url).pathname;
+        const pageName = urlPath
+          .split('/')
+          .filter(Boolean)
+          .pop()
+          ?.replace(/[-_]/g, ' ')
+          .replace(/\.\w+$/, '') || 'index';
+
+        // Capitalize first letter
+        const title = pageName.charAt(0).toUpperCase() + pageName.slice(1);
+        log.spinnerLog(title);
       } else if (data.type === 'failed') {
-        log.warn('Scraping', `Failed to scrape: ${data.url} - ${data.error}`);
+        const pageName = data.url.split('/').pop() || 'page';
+        log.spinnerLog(`✗ ${pageName}`);
+        log.verbose(`Failed to scrape: ${data.url} - ${data.error}`);
       }
     };
 
@@ -245,11 +381,16 @@ async function runSlurpWorkflow(url, options = {}) {
       runSlurpWorkflow.testProgressCallback = progressCallback;
     }
 
+    log.spinnerLog('Discovering linked pages...');
     const scrapeStats = await scraper.start();
-    log.success(
-      'Scraping',
-      `Finished. Processed: ${scrapeStats.processed} pages, Failed: ${scrapeStats.failed} pages (${scrapeStats.duration.toFixed(1)}s)`,
-    );
+
+    // Show scraping completion with stats (showHeader=true for first phase)
+    log.spinnerSucceed('Scraping', {
+      count: scrapeStats.processed,
+      label: 'pages',
+      duration: scrapeStats.duration,
+      failed: scrapeStats.failed,
+    }, true);
 
     if (scrapeStats.processed === 0) {
       throw new Error(
@@ -271,16 +412,37 @@ async function runSlurpWorkflow(url, options = {}) {
 
     const compiler = new MarkdownCompiler(compileOptions);
 
+    // Detect version and set metadata
+    const detectedVersion = version || detectVersionFromUrl(url);
+    compiler.setMetadata({
+      url,
+      title: `${siteName} Documentation`,
+      version: detectedVersion,
+    });
+
     // --- Run Compiler ---
-    log.start(
-      'Compiling',
-      `Processing partials from ${path.relative(process.cwd(), structuredPartialsDir)}...`,
-    );
+    log.spinnerStart('Compiling', 'processing files...');
+    log.spinnerLog('Reading scraped markdown files...');
+    log.spinnerLog('Extracting frontmatter metadata...');
+
     const compileResult = await compiler.compile();
-    log.success(
-      'Compiling',
-      `Finished. Output: ${path.relative(process.cwd(), compileResult.outputFile)} (${compileResult.stats.processedFiles} files processed)`,
+
+    // Log compilation activities
+    log.spinnerLog('Removing duplicate content sections...');
+    log.spinnerLog('Stripping navigation elements...');
+    log.spinnerLog('Consolidating into single document...');
+
+    const relativeOutputPath = path.relative(
+      process.cwd(),
+      compileResult.outputFile,
     );
+
+    log.spinnerSucceed('Compiling', {
+      count: compileResult.stats.processedFiles,
+      label: 'files',
+      output: relativeOutputPath,
+    });
+
     log.verbose(`Compiler Stats: ${JSON.stringify(compileResult.stats)}`);
 
     if (compileResult.stats.processedFiles === 0) {
@@ -293,10 +455,7 @@ async function runSlurpWorkflow(url, options = {}) {
     // --- Cleanup Partials ---
     const shouldDeletePartials = options.deletePartials ?? true;
     if (shouldDeletePartials && compileResult.stats.processedFiles > 0) {
-      log.start(
-        'Cleanup',
-        `Deleting partials directory: ${path.relative(process.cwd(), structuredPartialsDir)}...`,
-      );
+      log.verbose(`Deleting partials directory: ${structuredPartialsDir}`);
       await fs.remove(structuredPartialsDir);
       log.verbose(`Partials directory deleted.`);
     } else if (shouldDeletePartials) {
@@ -304,16 +463,26 @@ async function runSlurpWorkflow(url, options = {}) {
     }
 
     // --- Final Success Message ---
-    log.final(
-      `Slurp complete! Final output: ${path.relative(process.cwd(), finalCompiledPath)}`,
-    );
+    // Combine scraper and compiler stats for full pipeline view
+    const combinedStats = {
+      ...compileResult.stats,
+      rawHtmlTokens: scrapeStats.rawHtmlTokens || 0,
+      scrapeMarkdownTokens: scrapeStats.markdownTokens || 0,
+    };
+    log.done(relativeOutputPath, compileResult.outputFile, combinedStats);
 
     // --- Return Success ---
     return {
       success: true,
-      compiledFilePath: path.relative(process.cwd(), finalCompiledPath),
+      compiledFilePath: relativeOutputPath,
     };
   } catch (error) {
+    // Stop any active spinner
+    const spinner = log.getSpinner();
+    if (spinner.isSpinning) {
+      spinner.stop();
+    }
+
     log.error('Workflow', `Slurp workflow failed: ${error.message}`);
     if (error.stack) {
       log.verbose(error.stack);
@@ -340,4 +509,4 @@ async function runSlurpWorkflow(url, options = {}) {
     return { success: false, error };
   }
 }
-export { runSlurpWorkflow, extractNameFromUrl };
+export { runSlurpWorkflow, extractNameFromUrl, detectVersionFromUrl };

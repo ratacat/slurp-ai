@@ -11,6 +11,15 @@ vi.mock('../src/utils/logger.js', () => {
     console.error(`[${name}]`, ...args);
   });
 
+  const mockSpinner = {
+    isSpinning: false,
+    start: vi.fn(),
+    stop: vi.fn(),
+    update: vi.fn(),
+    succeed: vi.fn(),
+    fail: vi.fn(),
+  };
+
   return {
     log: {
       info: createForwardingSpy('info'),
@@ -22,6 +31,14 @@ vi.mock('../src/utils/logger.js', () => {
       start: createForwardingSpy('start'),
       progress: createForwardingSpy('progress'),
       final: createForwardingSpy('final'),
+      // New spinner-based methods
+      header: createForwardingSpy('header'),
+      spinnerStart: createForwardingSpy('spinnerStart'),
+      spinnerUpdate: createForwardingSpy('spinnerUpdate'),
+      spinnerSucceed: createForwardingSpy('spinnerSucceed'),
+      spinnerFail: createForwardingSpy('spinnerFail'),
+      done: createForwardingSpy('done'),
+      getSpinner: vi.fn(() => mockSpinner),
     },
   };
 });
@@ -122,9 +139,7 @@ describe('CLI Script (cli.js)', () => {
 
       expect(mockedRunSlurpWorkflow).toHaveBeenCalledOnce();
       expect(mockedRunSlurpWorkflow).toHaveBeenCalledWith(url, expect.objectContaining({ maxPages: 10 }));
-      // The log.start function is now used instead of console.error directly
-      // This is a more flexible assertion that checks either the old or new way
-      expect(consoleErrorSpy).toHaveBeenCalled();
+      // Logging now happens inside slurpWorkflow, which is mocked
     });
 
     it('should pass basePath correctly in direct URL mode when --base-path is provided', async () => {

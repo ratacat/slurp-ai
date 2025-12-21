@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Wrapper for the slurp CLI to suppress Node.js deprecation warnings
 
 # Find the real directory of this script, resolving symlinks
 SOURCE="${BASH_SOURCE[0]}"

@@ -69,20 +69,43 @@ vi.mock('../config.js', () => ({
 vi.mock('fs-extra');
 vi.mock('../src/DocumentationScraper.js');
 vi.mock('../src/MarkdownCompiler.js');
-vi.mock('../src/utils/logger.js', () => ({
-  log: {
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-    verbose: vi.fn(),
-    success: vi.fn(),
-    // Add new logger methods
+vi.mock('../src/utils/logger.js', () => {
+  const mockSpinner = {
+    isSpinning: false,
     start: vi.fn(),
-    progress: vi.fn(),
-    final: vi.fn(),
-  },
-}));
+    stop: vi.fn(),
+    update: vi.fn(),
+    succeed: vi.fn(),
+    fail: vi.fn(),
+  };
+  return {
+    log: {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      verbose: vi.fn(),
+      success: vi.fn(),
+      start: vi.fn(),
+      progress: vi.fn(),
+      final: vi.fn(),
+      // New spinner-based methods
+      header: vi.fn(),
+      spinnerStart: vi.fn(),
+      spinnerUpdate: vi.fn(),
+      spinnerSucceed: vi.fn(),
+      spinnerFail: vi.fn(),
+      done: vi.fn(),
+      getSpinner: vi.fn(() => mockSpinner),
+      spinnerLog: vi.fn(),
+      spinnerSetProgress: vi.fn(),
+    },
+  };
+});
+
+// Mock sitemap utilities
+vi.mock('../src/utils/sitemap.js');
+import { fetchSitemap, ProgressEstimator } from '../src/utils/sitemap.js';
 
 describe('slurpWorkflow', () => {
   let mockScraperInstance;
@@ -91,6 +114,18 @@ describe('slurpWorkflow', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+
+    // Mock sitemap utilities
+    fetchSitemap.mockResolvedValue({ found: false, urls: [], count: 0 });
+    ProgressEstimator.mockImplementation(() => ({
+      setSitemapEstimate: vi.fn(),
+      addDiscoveredUrl: vi.fn(),
+      recordCompletion: vi.fn(),
+      start: vi.fn(),
+      getProgress: vi.fn().mockReturnValue(0.5),
+      estimatedTotal: 0,
+      processedCount: 0,
+    }));
 
     // Mock instances and their methods
     mockScraperInstance = {
@@ -108,6 +143,7 @@ describe('slurpWorkflow', () => {
         outputFile: '/test/base/compiled/example-site_v1_docs.md', // Absolute path
         stats: { totalFiles: 10, processedFiles: 10, skippedFiles: 0, duplicatesRemoved: 0 },
       }),
+      setMetadata: vi.fn(), // Mock the setMetadata method used for YAML frontmatter
       // Add any other methods/properties accessed by the workflow if needed
     };
 
@@ -138,59 +174,69 @@ describe('slurpWorkflow', () => {
    });
 
   // --- extractNameFromUrl Tests ---
+  // New naming logic: uses domain name, adds "-docs" suffix if subdomain is "docs" or path starts with /docs
+  // Multi-part subdomains are reversed: platform.claude.com → claude-platform
   describe('extractNameFromUrl', () => {
-    it('should extract name from the last significant path segment', () => {
-      expect(extractNameFromUrl('https://example.com/docs/v1/my-library')).toBe('my-library');
-      expect(extractNameFromUrl('https://example.com/api/reference/users')).toBe('users');
+    it('should extract name from domain and add -docs suffix when path starts with /docs', () => {
+      expect(extractNameFromUrl('https://example.com/docs/v1/my-library')).toBe('example-docs');
+      expect(extractNameFromUrl('https://example.com/api/reference/users')).toBe('example');
     });
 
-    it('should remove file extensions', () => {
-      expect(extractNameFromUrl('https://example.com/guides/setup.html')).toBe('setup');
+    it('should add -docs suffix when subdomain is docs', () => {
+      expect(extractNameFromUrl('https://docs.anthropic.com/en/docs')).toBe('anthropic-docs');
+      expect(extractNameFromUrl('https://docs.python.org/3/library')).toBe('python-docs');
+      expect(extractNameFromUrl('https://docs.github.com/en/actions')).toBe('github-docs');
     });
 
-    it('should skip common path segments like docs, api, reference, etc.', () => {
-      expect(extractNameFromUrl('https://example.com/docs/api/reference/')).toBe('reference'); // Falls back through common names
-      expect(extractNameFromUrl('https://example.com/documentation/')).toBe('documentation'); // Uses the segment if it's the last one
-      expect(extractNameFromUrl('https://example.com/docs/v2/')).toBe('v2'); // Uses version segment
+    it('should not add -docs suffix for regular domains without /docs path', () => {
+      expect(extractNameFromUrl('https://react.dev/reference')).toBe('react');
+      expect(extractNameFromUrl('https://vitest.dev/api/')).toBe('vitest');
+      expect(extractNameFromUrl('https://expressjs.com/en/guide')).toBe('expressjs');
     });
 
-     it('should use domain name part if path is only / or empty after common segments', () => {
-       expect(extractNameFromUrl('https://example.com/docs/')).toBe('docs'); // Uses 'docs' as last segment
-       expect(extractNameFromUrl('https://example.com/')).toBe('example'); // Uses domain name part
-       expect(extractNameFromUrl('https://example.com/docs/api/')).toBe('api'); // Uses 'api' as last segment
-     });
+    it('should reverse multi-part subdomains for better naming', () => {
+      // platform.claude.com → claude-platform (brand first)
+      expect(extractNameFromUrl('https://platform.claude.com/docs')).toBe('claude-platform-docs');
+      expect(extractNameFromUrl('https://code.claude.com/docs')).toBe('claude-code-docs');
+      // flask.palletsprojects.com → palletsprojects-flask
+      expect(extractNameFromUrl('https://flask.palletsprojects.com/quickstart')).toBe('palletsprojects-flask');
+      expect(extractNameFromUrl('https://api.example.com/v1')).toBe('example-api');
+    });
 
-
-    it('should extract name from domain if path is insignificant', () => {
-      expect(extractNameFromUrl('https://react.dev/')).toBe('react');
-      expect(extractNameFromUrl('https://www.google.com/')).toBe('google');
+    it('should strip common TLDs', () => {
+      expect(extractNameFromUrl('https://example.com/')).toBe('example');
+      expect(extractNameFromUrl('https://example.org/')).toBe('example');
+      expect(extractNameFromUrl('https://example.io/')).toBe('example');
+      expect(extractNameFromUrl('https://example.dev/')).toBe('example');
+      expect(extractNameFromUrl('https://example.co.uk/')).toBe('example');
     });
 
     it('should sanitize the extracted name', () => {
-      expect(extractNameFromUrl('https://example.com/path/with spaces/and$ymbols!')).toBe('andsymbols'); // Sanitized last segment
-       expect(extractNameFromUrl('https://domain-with-hyphens.co.uk/')).toBe('domain-with-hyphens'); // Sanitized domain
+      expect(extractNameFromUrl('https://domain-with-hyphens.com/')).toBe('domain-with-hyphens');
     });
 
-     it('should handle URLs with query params and hash', () => {
-        expect(extractNameFromUrl('https://example.com/docs/my-lib?v=2#install')).toBe('my-lib');
-     });
+    it('should handle URLs with query params and hash', () => {
+      expect(extractNameFromUrl('https://example.com/docs/my-lib?v=2#install')).toBe('example-docs');
+    });
 
-     it('should return a default name if URL parsing fails', () => {
-        const consoleWarnSpy = vi.spyOn(log, 'warn'); // Use the mocked logger
-        const result = extractNameFromUrl('invalid-url');
-        expect(result).toMatch(/^doc-\d+$/); // Matches 'doc-' followed by timestamp
-        expect(consoleWarnSpy).toHaveBeenCalledWith('Workflow', expect.stringContaining('Failed to extract name from URL'));
-     });
+    it('should return a default name if URL parsing fails', () => {
+      const consoleWarnSpy = vi.spyOn(log, 'warn');
+      const result = extractNameFromUrl('invalid-url');
+      expect(result).toMatch(/^site-\d+$/); // Matches 'site-' followed by timestamp
+      expect(consoleWarnSpy).toHaveBeenCalledWith('Workflow', expect.stringContaining('Failed to extract name from URL'));
+    });
   });
 
   // --- runSlurpWorkflow Tests ---
   describe('runSlurpWorkflow', () => {
     const testUrl = 'https://example.com/docs/v1/target-lib';
-    const expectedSiteName = 'target-lib';
+    // New naming: uses domain name, adds -docs if path starts with /docs
+    const expectedSiteName = 'example-docs';
     const expectedPartialsBase = path.join('/test/base', 'slurp_partials_env'); // From env
     const expectedCompiledBase = path.join('/test/base', 'compiled_env'); // From env
     const expectedPartialsDir = path.join(expectedPartialsBase, expectedSiteName);
-    const expectedCompiledFile = path.join(expectedCompiledBase, `${expectedSiteName}_docs.md`);
+    // Name includes -docs suffix since path starts with /docs
+    const expectedCompiledFile = path.join(expectedCompiledBase, `${expectedSiteName}.md`);
     const expectedCompiledFileRelative = path.relative('/test/base', expectedCompiledFile);
 
     it('should run the full workflow successfully with default options', async () => {
@@ -199,7 +245,10 @@ describe('slurpWorkflow', () => {
       
       // Reset mocks
       vi.resetAllMocks();
-      
+
+      // Re-setup sitemap mocks after reset
+      fetchSitemap.mockResolvedValue({ found: false, urls: [], count: 0 });
+
       // Setup mocks with all required information
       mockScraperInstance.start.mockResolvedValue({
         processed: 10,
@@ -227,14 +276,14 @@ describe('slurpWorkflow', () => {
       const result = await runSlurpWorkflow(testUrl);
 
       // Check setup - use actual path or flexible matching
-      expect(fs.ensureDir).toHaveBeenCalledWith(expect.stringContaining('slurp_partials_env/target-lib'));
+      expect(fs.ensureDir).toHaveBeenCalledWith(expect.stringContaining('slurp_partials_env/example-docs'));
       expect(fs.ensureDir).toHaveBeenCalledWith(expect.stringContaining('compiled_env'));
 
       // Check Scraper instantiation and execution with flexible path matching
       expect(DocumentationScraper).toHaveBeenCalledWith(expect.objectContaining({
         baseUrl: testUrl,
         // Use a more flexible matcher for paths since they may vary by environment
-        outputDir: expect.stringContaining('slurp_partials_env/target-lib'),
+        outputDir: expect.stringContaining('slurp_partials_env/example-docs'),
         libraryInfo: expect.objectContaining({ library: expectedSiteName, version: '' }),
         // Check some defaults passed from workflow logic/env
         maxPages: 20, // Default in workflow if not passed/env
@@ -246,8 +295,8 @@ describe('slurpWorkflow', () => {
       // Check Compiler instantiation and execution with flexible path matching
       expect(MarkdownCompiler).toHaveBeenCalledWith(expect.objectContaining({
         // Use string matching for paths
-        inputDir: expect.stringContaining('slurp_partials_env/target-lib'),
-        outputFile: expect.stringContaining(`${expectedSiteName}_docs.md`),
+        inputDir: expect.stringContaining('slurp_partials_env/example-docs'),
+        outputFile: expect.stringContaining(`${expectedSiteName}.md`),
         // Check some defaults passed from workflow logic/env
         preserveMetadata: true,
         removeNavigation: true,
@@ -256,14 +305,13 @@ describe('slurpWorkflow', () => {
       expect(mockCompilerInstance.compile).toHaveBeenCalledOnce();
 
       // Check cleanup - use expect.any(String) for paths
-      expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('target-lib'));
+      expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('example-docs'));
 
-      // Check result
-      expect(result).toEqual({
-        success: true,
-        compiledFilePath: expectedCompiledFileRelative,
-      });
-      expect(log.final).toHaveBeenCalledWith(expect.stringContaining('Slurp complete!'));
+      // Check result - use flexible path matching since relative paths depend on cwd mock timing
+      expect(result.success).toBe(true);
+      expect(result.compiledFilePath).toContain('example-docs.md');
+      // New logger uses log.done instead of log.final
+      expect(log.done).toHaveBeenCalled();
     });
 
      it('should use options provided to override defaults/env', async () => {
@@ -272,7 +320,10 @@ describe('slurpWorkflow', () => {
          
          // Reset mocks for this test
          vi.resetAllMocks();
-         
+
+         // Re-setup sitemap mocks after reset
+         fetchSitemap.mockResolvedValue({ found: false, urls: [], count: 0 });
+
          // Setup fresh mocks with all required properties
          mockScraperInstance.start.mockResolvedValue({
            processed: 10,
@@ -292,7 +343,7 @@ describe('slurpWorkflow', () => {
         const expectedCustomPartialsBase = path.join('/test/base', 'custom_partials');
         const expectedCustomCompiledBase = path.join('/test/base', 'custom_compiled');
         const expectedCustomPartialsDir = path.join(expectedCustomPartialsBase, expectedSiteName, options.version);
-        const expectedCustomCompiledFile = path.join(expectedCustomCompiledBase, `${expectedSiteName}_${options.version}_docs.md`);
+        const expectedCustomCompiledFile = path.join(expectedCustomCompiledBase, `${expectedSiteName}_${options.version}.md`);
         const expectedCustomCompiledFileRelative = path.relative('/test/base', expectedCustomCompiledFile);
 
         // Update mock compiler path for this test
@@ -309,13 +360,13 @@ describe('slurpWorkflow', () => {
         const result = await runSlurpWorkflow(testUrl, options);
 
         // Check paths with version and custom dirs - use flexible matchers
-        expect(fs.ensureDir).toHaveBeenCalledWith(expect.stringContaining(`custom_partials/target-lib/2.1.0`));
+        expect(fs.ensureDir).toHaveBeenCalledWith(expect.stringContaining(`custom_partials/example-docs/2.1.0`));
         expect(fs.ensureDir).toHaveBeenCalledWith(expect.stringContaining('custom_compiled'));
 
         // Check options passed to Scraper - use flexible path matching
         expect(DocumentationScraper).toHaveBeenCalledWith(expect.objectContaining({
             // Use string matching instead of exact path matching
-            outputDir: expect.stringContaining(`custom_partials/target-lib/${options.version}`),
+            outputDir: expect.stringContaining(`custom_partials/example-docs/${options.version}`),
             libraryInfo: expect.objectContaining({ library: expectedSiteName, version: options.version }),
             maxPages: options.maxPages,
             useHeadless: options.useHeadless,
@@ -325,19 +376,17 @@ describe('slurpWorkflow', () => {
         // Check options passed to Compiler with flexible path matching
         expect(MarkdownCompiler).toHaveBeenCalledWith(expect.objectContaining({
             // Use string matching for paths
-            inputDir: expect.stringContaining(`custom_partials/target-lib/${options.version}`),
-            outputFile: expect.stringContaining(`${expectedSiteName}_${options.version}_docs.md`),
+            inputDir: expect.stringContaining(`custom_partials/example-docs/${options.version}`),
+            outputFile: expect.stringContaining(`${expectedSiteName}_${options.version}.md`),
             preserveMetadata: options.preserveMetadata,
         }));
 
         // Check cleanup skipped
         expect(fs.remove).not.toHaveBeenCalled();
 
-        // Check result
-        expect(result).toEqual({
-            success: true,
-            compiledFilePath: expectedCustomCompiledFileRelative,
-        });
+        // Check result - use flexible path matching since relative paths depend on cwd mock timing
+        expect(result.success).toBe(true);
+        expect(result.compiledFilePath).toContain('example-docs_2.1.0.md');
      });
 
      it('should handle invalid URL input by throwing an error', async () => {
@@ -357,7 +406,7 @@ describe('slurpWorkflow', () => {
 
         expect(mockScraperInstance.start).toHaveBeenCalledOnce();
         expect(MarkdownCompiler).not.toHaveBeenCalled(); // Compiler shouldn't run
-        expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('target-lib')); // Cleanup should still attempt
+        expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('example-docs')); // Cleanup should still attempt
         expect(log.error).toHaveBeenCalledWith('Workflow', `Slurp workflow failed: ${scrapeError.message}`);
         expect(result).toEqual({
             success: false,
@@ -369,7 +418,10 @@ describe('slurpWorkflow', () => {
         // Reset mocks and re-mock cwd
         vi.resetAllMocks();
         vi.spyOn(process, 'cwd').mockReturnValue('/test/base');
-        
+
+        // Re-setup sitemap mocks after reset
+        fetchSitemap.mockResolvedValue({ found: false, urls: [], count: 0 });
+
         // Setup fresh mocks
         const compileError = new Error('Compilation exploded');
         mockScraperInstance.start.mockResolvedValue({
@@ -391,7 +443,7 @@ describe('slurpWorkflow', () => {
         expect(mockScraperInstance.start).toHaveBeenCalledOnce();
         
         // Test for cleanup with flexible path matching
-        expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('slurp_partials_env/target-lib')); // Cleanup with flexible matcher
+        expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('slurp_partials_env/example-docs')); // Cleanup with flexible matcher
         expect(log.error).toHaveBeenCalledWith('Workflow', `Slurp workflow failed: ${compileError.message}`);
         expect(result).toEqual({
             success: false,
@@ -402,7 +454,10 @@ describe('slurpWorkflow', () => {
       it('should return failure and cleanup if scraper processes zero pages', async () => {
          // Reset mocks for this test
          vi.resetAllMocks();
-         
+
+         // Re-setup sitemap mocks after reset
+         fetchSitemap.mockResolvedValue({ found: false, urls: [], count: 0 });
+
          // Setup scraper to return zero processed pages
          const zeroProcessedError = "Scraping completed, but no pages were successfully processed. Cannot compile.";
          
@@ -419,7 +474,7 @@ describe('slurpWorkflow', () => {
          const result = await runSlurpWorkflow(testUrl);
 expect(mockScraperInstance.start).toHaveBeenCalledOnce();
 expect(MarkdownCompiler).not.toHaveBeenCalled(); // Compiler shouldn't run
-expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('target-lib')); // Use flexible path matcher
+expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('example-docs')); // Use flexible path matcher
 
 // Check the error is logged correctly with the stage parameter
          // Check the error is logged correctly with the stage parameter
@@ -442,7 +497,10 @@ expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('target-lib')); /
             // Reset mocks and re-mock cwd
             vi.resetAllMocks();
             vi.spyOn(process, 'cwd').mockReturnValue('/test/base');
-            
+
+            // Re-setup sitemap mocks after reset
+            fetchSitemap.mockResolvedValue({ found: false, urls: [], count: 0 });
+
             // Re-setup scraper to return proper stats
             mockScraperInstance.start.mockResolvedValue({
                 processed: 10,
@@ -461,7 +519,10 @@ expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('target-lib')); /
        it('should skip partials deletion if compilation processes zero files (even if deletePartials is true)', async () => {
             // Create fresh clean mocks to avoid interference from previous tests
             vi.clearAllMocks();
-            
+
+            // Re-setup sitemap mocks after clear
+            fetchSitemap.mockResolvedValue({ found: false, urls: [], count: 0 });
+
             // Important: Mock everything from scratch for this test case
             const freshScraperInstance = {
                 start: vi.fn().mockResolvedValue({
@@ -472,7 +533,7 @@ expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('target-lib')); /
                 on: vi.fn().mockReturnThis(),
                 emit: vi.fn()
             };
-            
+
             const freshCompilerInstance = {
                 compile: vi.fn().mockResolvedValue({
                     outputFile: expectedCompiledFile,
@@ -480,7 +541,8 @@ expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('target-lib')); /
                         processedFiles: 0, // This is the key - zero files processed
                         totalFiles: 10
                     }
-                })
+                }),
+                setMetadata: vi.fn() // Required for metadata setting
             };
             
             // Override the class mocks with our fresh instances
@@ -505,7 +567,10 @@ expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('target-lib')); /
             // Reset mocks and re-mock cwd
             vi.resetAllMocks();
             vi.spyOn(process, 'cwd').mockReturnValue('/test/base');
-            
+
+            // Re-setup sitemap mocks after reset
+            fetchSitemap.mockResolvedValue({ found: false, urls: [], count: 0 });
+
             // Setup fresh mocks
             mockScraperInstance.start.mockResolvedValue({
                 processed: 10,
@@ -539,9 +604,10 @@ expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('target-lib')); /
            // Extract the callback from the on() mock call directly
            progressCallback = mockScraperInstance.on.mock.calls.find(call => call[0] === 'progress')[1];
            expect(progressCallback).toBeDefined(); // Ensure the listener was set up
-           progressCallback({ type: 'processing', url: 'url1' });
-           progressCallback({ type: 'saved', url: 'url1', outputPath: 'path1' });
-           progressCallback({ type: 'processing', url: 'url2' });
+           progressCallback({ type: 'processing', url: 'https://example.com/docs/page1' });
+           progressCallback({ type: 'saved', url: 'https://example.com/docs/page1', outputPath: 'path1' });
+           progressCallback({ type: 'processing', url: 'https://example.com/docs/page2' });
+           progressCallback({ type: 'saved', url: 'https://example.com/docs/page2', outputPath: 'path2' });
 
            // Wait for the workflow to complete
            await workflowPromise;
@@ -549,9 +615,14 @@ expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('target-lib')); /
 
            expect(mockScraperInstance.on).toHaveBeenCalledWith('progress', expect.any(Function));
            // Check if the workflow's internal progress handler called the provided callback
-           expect(onProgressMock).toHaveBeenCalledTimes(2); // Called for 'processing' events
-           expect(onProgressMock).toHaveBeenCalledWith(1, undefined, 'Scraping page 1...');
-           expect(onProgressMock).toHaveBeenCalledWith(2, undefined, 'Scraping page 2...');
+           // Note: onProgress is called for 'saved' events, not 'processing' events
+           expect(onProgressMock).toHaveBeenCalledTimes(2);
+           // Check calls - second arg (estimatedTotal) can be undefined or a number
+           const calls = onProgressMock.mock.calls;
+           expect(calls[0][0]).toBe(1);
+           expect(calls[0][2]).toBe('Scraping page 1...');
+           expect(calls[1][0]).toBe(2);
+           expect(calls[1][2]).toBe('Scraping page 2...');
        });
 
 
@@ -559,7 +630,10 @@ expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('target-lib')); /
             // Reset mocks and re-mock cwd
             vi.resetAllMocks();
             vi.spyOn(process, 'cwd').mockReturnValue('/test/base');
-            
+
+            // Re-setup sitemap mocks after reset
+            fetchSitemap.mockResolvedValue({ found: false, urls: [], count: 0 });
+
             // Re-setup scraper mock
             mockScraperInstance.start.mockResolvedValue({
                 processed: 5,

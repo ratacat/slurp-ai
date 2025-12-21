@@ -2,6 +2,7 @@ import axios from 'axios';
 import * as cheerioModule from 'cheerio';
 import puppeteer from 'puppeteer';
 import TurndownService from 'turndown';
+import { gfm } from 'turndown-plugin-gfm';
 import fs from 'fs-extra';
 import path from 'path';
 import { URL } from 'url';
@@ -10,8 +11,79 @@ import { extract } from '@extractus/article-extractor';
 import PQueueModule from 'p-queue';
 import { resolvePath } from './utils/pathUtils.js';
 import { cleanupMarkdown as sharedCleanupMarkdown } from './utils/markdownUtils.js';
-import { log } from './utils/logger.js'; // Import the logger utility
+import { log } from './utils/logger.js';
 import { paths, scraping, urlFiltering } from '../config.js';
+
+/**
+ * Patterns that indicate a 404/error page
+ */
+const ERROR_PAGE_PATTERNS = [
+  'page not found',
+  "page doesn't exist",
+  'page does not exist',
+  '404 error',
+  '404 not found',
+  'not found',
+  "couldn't find",
+  'could not find',
+  'no longer exists',
+  'has been removed',
+  'has been deleted',
+  "doesn't exist",
+  'does not exist',
+  'unavailable',
+  'error 404',
+  'oops!',
+  "we can't find",
+  "we couldn't find",
+  'this page is missing',
+  'broken link',
+  'dead link',
+];
+
+/**
+ * Check if HTML content appears to be a 404/error page
+ * @param {string} html - The HTML content to check
+ * @returns {boolean} True if the content looks like a 404 page
+ */
+function is404Content(html) {
+  if (!html || typeof html !== 'string') return false;
+
+  const lowerHtml = html.toLowerCase();
+
+  // Check for common 404 patterns in short pages
+  // Long pages are less likely to be error pages
+  if (html.length < 10000) {
+    const matchCount = ERROR_PAGE_PATTERNS.filter((pattern) =>
+      lowerHtml.includes(pattern),
+    ).length;
+
+    // If multiple patterns match, it's very likely a 404 page
+    if (matchCount >= 2) return true;
+
+    // For very short pages, even one match is suspicious
+    if (html.length < 3000 && matchCount >= 1) {
+      // But check it's in a prominent place (title, h1, main content)
+      const titleMatch = /<title[^>]*>([^<]*)<\/title>/i.exec(html);
+      const h1Match = /<h1[^>]*>([^<]*)<\/h1>/i.exec(html);
+
+      if (
+        titleMatch &&
+        ERROR_PAGE_PATTERNS.some((p) => titleMatch[1].toLowerCase().includes(p))
+      ) {
+        return true;
+      }
+      if (
+        h1Match &&
+        ERROR_PAGE_PATTERNS.some((p) => h1Match[1].toLowerCase().includes(p))
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
 // Handle potential default export for p-queue (ESM compatibility)
 const cheerio = cheerioModule.default || cheerioModule;
 let PQueueImport = PQueueModule;
@@ -238,6 +310,9 @@ class DocsToMarkdown extends EventEmitter {
       codeBlockStyle: 'fenced',
     });
 
+    // Enable GFM (GitHub Flavored Markdown) for tables, strikethrough, etc.
+    this.turndownService.use(gfm);
+
     this.configureTurndown();
 
     this.stats = {
@@ -245,6 +320,8 @@ class DocsToMarkdown extends EventEmitter {
       failed: 0,
       startTime: null,
       endTime: null,
+      rawHtmlTokens: 0,
+      markdownTokens: 0,
     };
     this.signal = options.signal;
 
@@ -351,12 +428,24 @@ class DocsToMarkdown extends EventEmitter {
       },
     });
 
-    this.turndownService.addRule('tables', {
-      filter: ['table'],
-      replacement(content) {
-        return `\n\n${content}\n\n`;
+    // Handle headings with empty anchors/spans (common in doc sites for deep linking)
+    // This prevents "## \n\nHeading Text" broken patterns
+    this.turndownService.addRule('headingsWithAnchors', {
+      filter: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
+      replacement(content, node) {
+        const level = Number(node.nodeName.charAt(1));
+        const hashes = '#'.repeat(level);
+        // Clean up the content: remove empty brackets, trim whitespace
+        const cleanContent = content
+          .replace(/\[\]\([^)]*\)/g, '') // Remove empty links like [](_anchor)
+          .replace(/\s+/g, ' ') // Normalize whitespace
+          .trim();
+        return cleanContent ? `\n\n${hashes} ${cleanContent}\n\n` : '';
       },
     });
+
+    // Tables are handled by the GFM plugin
+
     this.turndownService.addRule('internalLinks', {
       filter(node) {
         return node.nodeName === 'A' && node.getAttribute('href');
@@ -529,6 +618,8 @@ class DocsToMarkdown extends EventEmitter {
       failed: this.stats.failed,
       duration,
       pagesPerSecond: (this.stats.processed / duration).toFixed(2),
+      rawHtmlTokens: this.stats.rawHtmlTokens,
+      markdownTokens: this.stats.markdownTokens,
     };
 
     this.emit('complete', stats);
@@ -575,9 +666,6 @@ class DocsToMarkdown extends EventEmitter {
 
     this.queuedUrls.add(url);
 
-    // Use timeout from config, add a buffer of 5s
-    const internalTimeout = scraping.timeout;
-    const taskTimeout = internalTimeout + 5000; // Task timeout slightly longer than internal
     this.queue.add(async () => {
       if (this.signal?.aborted) {
         log.verbose(`Task for ${url} cancelled before execution.`);
@@ -625,21 +713,37 @@ class DocsToMarkdown extends EventEmitter {
             }
           }
           if (pageError) throw pageError;
+
+          // Check for 404-like content from puppeteer
+          if (is404Content(html)) {
+            log.verbose(
+              `${taskId}: Detected 404-like content (puppeteer), skipping.`,
+            );
+            this.stats.failed += 1;
+            return;
+          }
         } else {
           log.verbose(`${taskId}: Using axios.`);
-          const response = await axios.get(
-            url,
-            {
-              timeout: 60000, // Match timeout
-              headers: {
-                'User-Agent':
-                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-              },
+          const response = await axios.get(url, {
+            timeout: 60000,
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             },
-            { timeout: taskTimeout },
-          );
+            // Reject 4xx and 5xx status codes
+            validateStatus: (status) => status >= 200 && status < 400,
+          });
           html = response.data;
-          log.verbose(`${taskId}: Axios fetch successful.`);
+          log.verbose(
+            `${taskId}: Axios fetch successful (status: ${response.status}).`,
+          );
+        }
+
+        // Check for 404-like content (soft 404s that return 200)
+        if (is404Content(html)) {
+          log.verbose(`${taskId}: Detected 404-like content, skipping.`);
+          this.stats.failed += 1;
+          return;
         }
 
         log.verbose(`${taskId}: Loading content into cheerio...`);
@@ -693,18 +797,46 @@ class DocsToMarkdown extends EventEmitter {
   }
 
   /**
+   * Estimate token count for text (approximation: ~4 chars per token)
+   * @param {string} text - Text to count tokens for
+   * @returns {number} Estimated token count
+   */
+  estimateTokens(text) {
+    if (!text) return 0;
+    return Math.ceil(text.length / 4);
+  }
+
+  /**
    * Process a page - extract content and convert to markdown
    * @param {string} url - The URL of the page
    * @param {CheerioStatic} $ - Cheerio instance with loaded HTML
    */
   async processPage(url, $) {
+    // Get raw HTML size for token tracking
+    const rawHtml = $.html() || '';
+    this.stats.rawHtmlTokens += this.estimateTokens(rawHtml);
+
     try {
       const article = await extract(url);
 
       if (article && article.content) {
-        let markdown = this.turndownService.turndown(article.content);
+        let markdown;
+        try {
+          markdown = this.turndownService.turndown(article.content);
+        } catch (turndownError) {
+          // GFM plugin can fail on malformed tables - fall back to basic conversion
+          log.verbose(`Turndown conversion failed for ${url}: ${turndownError.message}`);
+          const basicTurndown = new TurndownService({
+            headingStyle: 'atx',
+            codeBlockStyle: 'fenced',
+          });
+          markdown = basicTurndown.turndown(article.content);
+        }
 
         markdown = this.cleanupMarkdown(markdown);
+
+        // Track markdown tokens
+        this.stats.markdownTokens += this.estimateTokens(markdown);
 
         await this.saveMarkdown(url, markdown, this.libraryInfo);
         return;
@@ -719,9 +851,24 @@ class DocsToMarkdown extends EventEmitter {
       $(selector, content).remove();
     });
 
-    let markdown = this.turndownService.turndown(content.html() || '');
+    let markdown;
+    try {
+      markdown = this.turndownService.turndown(content.html() || '');
+    } catch (turndownError) {
+      // GFM plugin can fail on malformed tables - fall back to basic conversion
+      log.verbose(`Turndown conversion failed for ${url}: ${turndownError.message}`);
+      // Create a fresh turndown instance without GFM for this page
+      const basicTurndown = new TurndownService({
+        headingStyle: 'atx',
+        codeBlockStyle: 'fenced',
+      });
+      markdown = basicTurndown.turndown(content.html() || '');
+    }
 
     markdown = this.cleanupMarkdown(markdown);
+
+    // Track markdown tokens
+    this.stats.markdownTokens += this.estimateTokens(markdown);
 
     await this.saveMarkdown(url, markdown, this.libraryInfo);
   }

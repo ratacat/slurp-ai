@@ -32,6 +32,11 @@ function cleanupMarkdown(markdown) {
 
   let result = trimmed;
 
+  // 0. Fix broken headings where ## is on its own line followed by the text
+  // Pattern: "## \n\nSome text" → "## Some text"
+  // Matches: heading markers alone on a line, followed by blank lines, then text
+  result = result.replace(/^(#{1,6})\s*\n\n+(\S[^\n]*)/gm, '$1 $2');
+
   // 1. Fix navigation links with excessive whitespace
   result = result.replace(/\*\s+\[\s*([^\n]+?)\s*\]\(([^)]+)\)/g, '* [$1]($2)');
 

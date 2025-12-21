@@ -117,7 +117,7 @@ This is often used if the base path itself returns a 404 when you try and load i
 
 ## MCP Server Integration
 
-SlurpAI MCP is in testing, it's included in this release. 
+SlurpAI MCP is in testing, it's included in this release.
 
 ## Contributing
 

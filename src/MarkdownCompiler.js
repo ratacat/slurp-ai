@@ -67,7 +67,32 @@ class MarkdownCompiler {
       processedFiles: 0,
       skippedFiles: 0,
       duplicatesRemoved: 0,
+      rawTokens: 0,
+      cleanedTokens: 0,
+      navTokensRemoved: 0,
+      duplicateTokensRemoved: 0,
     };
+  }
+
+  /**
+   * Estimate token count for text (approximation: ~4 chars per token)
+   * @param {string} text - Text to count tokens for
+   * @returns {number} Estimated token count
+   */
+  static estimateTokens(text) {
+    if (!text) return 0;
+    return Math.ceil(text.length / 4);
+  }
+
+  /**
+   * Set metadata for the compiled document header
+   * @param {object} metadata - Metadata object
+   * @param {string} metadata.url - Source URL
+   * @param {string} metadata.title - Document title
+   * @param {string} [metadata.version] - Detected version
+   */
+  setMetadata(metadata) {
+    this.metadata = metadata;
   }
 
   /**
@@ -80,11 +105,42 @@ class MarkdownCompiler {
         throw new Error(`Input directory not found: ${this.inputDir}`);
       }
 
-      let outputContent = `# Compiled Documentation\n\nGenerated on ${new Date().toISOString()}\n\n`;
-
+      // Process content first to get accurate token stats
       const processedContent = await this.processDirectoryContent(
         this.inputDir,
       );
+
+      // Build header with metadata
+      const scrapeDate = new Date().toISOString();
+      let headerLines = ['---'];
+
+      if (this.metadata?.title) {
+        headerLines.push(`title: "${this.metadata.title}"`);
+      }
+      if (this.metadata?.url) {
+        headerLines.push(`source: "${this.metadata.url}"`);
+      }
+      if (this.metadata?.version) {
+        headerLines.push(`version: "${this.metadata.version}"`);
+      }
+      headerLines.push(`scraped: "${scrapeDate}"`);
+      headerLines.push(`tokens: ${this.stats.cleanedTokens}`);
+      headerLines.push('---');
+      headerLines.push('');
+
+      // Build the document
+      const title = this.metadata?.title || 'Compiled Documentation';
+      let outputContent = headerLines.join('\n');
+      outputContent += `# ${title}\n\n`;
+
+      if (this.metadata?.version) {
+        outputContent += `> Version: ${this.metadata.version}\n`;
+      }
+      if (this.metadata?.url) {
+        outputContent += `> Source: ${this.metadata.url}\n`;
+      }
+      outputContent += `> Generated: ${new Date().toLocaleString()}\n\n`;
+
       outputContent += processedContent;
 
       await fs.ensureDir(path.dirname(this.outputFile));
@@ -176,7 +232,14 @@ class MarkdownCompiler {
       const { frontmatter, markdown } =
         MarkdownCompiler.extractFrontmatter(content);
 
+      // Track raw tokens before cleanup
+      const rawTokens = MarkdownCompiler.estimateTokens(markdown);
+      this.stats.rawTokens += rawTokens;
+
       const cleanedContent = this.cleanupContent(markdown);
+
+      // Track cleaned tokens
+      const cleanedTokens = MarkdownCompiler.estimateTokens(cleanedContent);
 
       if (!cleanedContent.trim()) {
         return null;
@@ -187,11 +250,15 @@ class MarkdownCompiler {
 
         if (this.contentHashes.has(contentHash)) {
           this.stats.duplicatesRemoved += 1;
+          this.stats.duplicateTokensRemoved += cleanedTokens;
           return null;
         }
 
         this.contentHashes.add(contentHash);
       }
+
+      // Only count tokens that make it to final output
+      this.stats.cleanedTokens += cleanedTokens;
 
       const fileName = path.basename(filePath);
       let output = `#### ${fileName}\n\n`;
@@ -248,12 +315,16 @@ class MarkdownCompiler {
    */
   cleanupContent(content) {
     let cleaned = content;
+    const beforeNavTokens = MarkdownCompiler.estimateTokens(cleaned);
 
     if (this.removeNavigation) {
       this.excludePatterns.forEach((pattern) => {
         cleaned = cleaned.replace(pattern, '');
       });
     }
+
+    const afterNavTokens = MarkdownCompiler.estimateTokens(cleaned);
+    this.stats.navTokensRemoved += beforeNavTokens - afterNavTokens;
 
     cleaned = sharedCleanupMarkdown(cleaned);
 

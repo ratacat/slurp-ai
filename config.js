@@ -12,7 +12,7 @@ const config = {
 
   // Web scraping settings
   scraping: {
-    maxPagesPerSite: 100,
+    maxPagesPerSite: 200,
     concurrency: 25,
     retryCount: 3,
     retryDelay: 1000,

@@ -102,6 +102,10 @@ describe('MarkdownCompiler', () => {
         processedFiles: 0,
         skippedFiles: 0,
         duplicatesRemoved: 0,
+        rawTokens: 0,
+        cleanedTokens: 0,
+        navTokensRemoved: 0,
+        duplicateTokensRemoved: 0,
       });
     });
 

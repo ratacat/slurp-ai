@@ -143,9 +143,6 @@ async function main() {
       basePath: params['base-path'] || url, // Default to url if --base-path is not provided
     };
 
-    log.start('Init', `Starting Slurp for: ${url}`);
-    log.info(`   Base Path Filter: ${workflowOptions.basePath || 'None'}`);
-
     // Compilation options can also be passed if needed, or rely on env vars within the workflow
     // preserveMetadata: ...,
     // removeNavigation: ...,
