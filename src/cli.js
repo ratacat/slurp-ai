@@ -69,7 +69,14 @@ Options:
   --retry-count <number>   Number of retries for failed requests (default: 3)
   --retry-delay <number>   Delay between retries in ms (default: 1000)
   --base-path <url>        URL prefix required for scraped links (if SLURP_ENFORCE_BASE_PATH=true). Defaults to start URL.
+  --keep-partials          Keep individual markdown files after compilation (for RAG use)
   --yes                    Skip confirmation prompts
+
+RAG Options:
+  --rag                    Output one clean markdown file per webpage (for RAG systems)
+  --chunk                  Enable semantic chunking by headings (alternative to --rag)
+  --chunk-size <number>    Maximum tokens per chunk (default: 1000, only with --chunk)
+  --chunk-overlap <number> Overlap tokens between chunks (default: 100, only with --chunk)
 
 Compile Options:
   --input <dir>            Input directory for compiler (default: ./slurp_partials or SLURP_INPUT_DIR)
@@ -141,13 +148,24 @@ async function main() {
         : undefined,
       // Add base path handling
       basePath: params['base-path'] || url, // Default to url if --base-path is not provided
+      // Keep partials for RAG use cases
+      deletePartials: params['keep-partials'] || params.rag ? false : undefined,
+      // RAG options - one file per page with clean names
+      enableRagOutput: params.rag ? true : undefined,
+      // RAG chunking options (splits by headings)
+      enableChunking: params.chunk ? true : undefined,
+      chunkSize: params['chunk-size']
+        ? parseInt(params['chunk-size'], 10)
+        : undefined,
+      chunkOverlap: params['chunk-overlap']
+        ? parseInt(params['chunk-overlap'], 10)
+        : undefined,
     };
 
     // Compilation options can also be passed if needed, or rely on env vars within the workflow
     // preserveMetadata: ...,
     // removeNavigation: ...,
     // removeDuplicates: ...,
-    // deletePartials: ...,
     // Note: output paths are handled within runSlurpWorkflow based on env/defaults
     // [LEGACY DEBUG] log removed
     try {
@@ -232,6 +250,19 @@ async function main() {
             : undefined,
           // Add base path handling
           basePath: params['base-path'] || fetchArg, // Default to fetchArg (the url) if --base-path is not provided
+          // Keep partials for RAG/Khoj use cases
+          deletePartials:
+            params['keep-partials'] || params.rag ? false : undefined,
+          // RAG options - one file per page with clean names
+          enableRagOutput: params.rag ? true : undefined,
+          // RAG chunking options (splits by headings)
+          enableChunking: params.chunk ? true : undefined,
+          chunkSize: params['chunk-size']
+            ? parseInt(params['chunk-size'], 10)
+            : undefined,
+          chunkOverlap: params['chunk-overlap']
+            ? parseInt(params['chunk-overlap'], 10)
+            : undefined,
         };
         await runSlurpWorkflow(fetchArg, {
           ...generalWorkflowOptions,
@@ -311,6 +342,19 @@ async function main() {
           version: params.version,
           // Add base path handling
           basePath: params['base-path'] || params.url, // Default to params.url if --base-path is not provided
+          // Keep partials for RAG use cases
+          deletePartials:
+            params['keep-partials'] || params.rag ? false : undefined,
+          // RAG options - one file per page with clean names
+          enableRagOutput: params.rag ? true : undefined,
+          // RAG chunking options (splits by headings)
+          enableChunking: params.chunk ? true : undefined,
+          chunkSize: params['chunk-size']
+            ? parseInt(params['chunk-size'], 10)
+            : undefined,
+          chunkOverlap: params['chunk-overlap']
+            ? parseInt(params['chunk-overlap'], 10)
+            : undefined,
         };
         // Debug log removed
         await runSlurpWorkflow(params.url, legacyOptions);

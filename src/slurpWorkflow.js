@@ -5,6 +5,11 @@ import DocumentationScraper from './DocumentationScraper.js';
 import { MarkdownCompiler } from './MarkdownCompiler.js';
 import { log } from './utils/logger.js';
 import { fetchSitemap, ProgressEstimator } from './utils/sitemap.js';
+import {
+  chunkMarkdown,
+  chunksToJsonl,
+  chunksToMarkdownFiles,
+} from './utils/chunker.js';
 import { paths, scraping, urlFiltering, compilation } from '../config.js';
 
 /**
@@ -449,6 +454,109 @@ async function runSlurpWorkflow(url, options = {}) {
       log.warn(
         'Compiling',
         'Compilation finished, but no files were processed.',
+      );
+    }
+
+    // --- RAG Per-Page Output (if enabled) ---
+    let ragOutputResult = null;
+    if (options.enableRagOutput) {
+      log.start('RAG Output', 'Creating per-page RAG files...');
+
+      const ragDir = path.join(absoluteCompiledDir, `${siteName}-rag`);
+      await fs.ensureDir(ragDir);
+
+      // Read all partial files and copy with clean names
+      const partialFiles = await fs.readdir(structuredPartialsDir, { recursive: true });
+      const mdFiles = partialFiles.filter((f) => f.endsWith('.md'));
+      let fileCount = 0;
+
+      for (const relPath of mdFiles) {
+        const fullPath = path.join(structuredPartialsDir, relPath);
+        const content = await fs.readFile(fullPath, 'utf-8');
+
+        // Extract URL from frontmatter to create clean filename
+        const urlMatch = content.match(/^url:\s*(.+)$/m);
+        const sourceUrl = urlMatch ? urlMatch[1].trim() : '';
+
+        // Create clean filename from URL path
+        let cleanName = relPath;
+        if (sourceUrl) {
+          try {
+            const urlObj = new URL(sourceUrl);
+            // Get the last meaningful part of the path
+            const pathParts = urlObj.pathname.split('/').filter(Boolean);
+            if (pathParts.length > 0) {
+              // Use last 2-3 parts for context
+              const relevantParts = pathParts.slice(-3);
+              cleanName = relevantParts.join('-') + '.md';
+            }
+          } catch {
+            // Keep original name if URL parsing fails
+          }
+        }
+
+        // Sanitize filename
+        cleanName = cleanName
+          .replace(/[^a-zA-Z0-9-_.]/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+
+        if (!cleanName.endsWith('.md')) {
+          cleanName += '.md';
+        }
+
+        // Write to RAG output folder
+        await fs.writeFile(path.join(ragDir, cleanName), content);
+        fileCount++;
+      }
+
+      log.success('RAG Output', `Created ${fileCount} files → ${ragDir}/`);
+      ragOutputResult = { path: ragDir, count: fileCount };
+    }
+
+    // --- RAG Chunking (if enabled) ---
+    let chunkingResult = null;
+    if (options.enableChunking) {
+      log.start('Chunking', 'Creating RAG chunks...');
+
+      const chunkOptions = {
+        maxTokens: options.chunkSize || 1000,
+        overlapTokens: options.chunkOverlap || 100,
+        sourceUrl: url,
+        title: siteName,
+      };
+
+      // Read the compiled file and chunk it
+      const compiledContent = await fs.readFile(compileResult.outputFile, 'utf-8');
+      const chunks = chunkMarkdown(compiledContent, chunkOptions);
+
+      // Determine output format and directory
+      const chunkFormat = options.chunkFormat || 'markdown';
+      const chunksDir = path.join(absoluteCompiledDir, `${siteName}-chunks`);
+      await fs.ensureDir(chunksDir);
+
+      if (chunkFormat === 'jsonl') {
+        // Output as JSONL file
+        const jsonlContent = chunksToJsonl(chunks);
+        const jsonlPath = path.join(chunksDir, 'chunks.jsonl');
+        await fs.writeFile(jsonlPath, jsonlContent);
+        log.success('Chunking', `Created ${chunks.length} chunks → ${jsonlPath}`);
+        chunkingResult = { format: 'jsonl', path: jsonlPath, count: chunks.length };
+      } else {
+        // Output as individual markdown files
+        const chunkFiles = chunksToMarkdownFiles(chunks);
+        for (const file of chunkFiles) {
+          await fs.writeFile(path.join(chunksDir, file.filename), file.content);
+        }
+        log.success('Chunking', `Created ${chunks.length} chunks → ${chunksDir}/`);
+        chunkingResult = { format: 'markdown', path: chunksDir, count: chunks.length };
+      }
+
+      // Log chunk statistics
+      const totalTokens = chunks.reduce((sum, c) => sum + c.tokens, 0);
+      const avgTokens = Math.round(totalTokens / chunks.length);
+      log.verbose(
+        `Chunk stats: ${chunks.length} chunks, ${totalTokens} total tokens, ~${avgTokens} avg tokens/chunk`,
       );
     }
 
