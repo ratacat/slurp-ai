@@ -1,7 +1,11 @@
 import axios from 'axios';
 import * as cheerioModule from 'cheerio';
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import TurndownService from 'turndown';
+
+// Use stealth plugin to evade bot detection
+puppeteer.use(StealthPlugin());
 import { gfm } from 'turndown-plugin-gfm';
 import fs from 'fs-extra';
 import path from 'path';
@@ -631,7 +635,18 @@ class DocsToMarkdown extends EventEmitter {
 
     let browser = null;
     if (this.useHeadless) {
-      browser = await puppeteer.launch({ headless: 'new' });
+      browser = await puppeteer.launch({
+        headless: 'new',
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-blink-features=AutomationControlled',
+          '--disable-infobars',
+          '--window-size=1920,1080',
+          '--start-maximized',
+          '--disable-dev-shm-usage',
+        ],
+      });
     }
 
     this.addToQueue(this.baseUrl, browser);
@@ -790,6 +805,11 @@ class DocsToMarkdown extends EventEmitter {
               }
 
               await page.setDefaultNavigationTimeout(60000);
+              // Set realistic viewport and user-agent to avoid bot detection
+              await page.setViewport({ width: 1920, height: 1080 });
+              await page.setUserAgent(
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              );
               const response = await page.goto(url, { waitUntil: 'networkidle2' });
 
               // Check response status if available
